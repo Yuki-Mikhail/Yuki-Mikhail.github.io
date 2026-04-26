@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>瑞利分布交互可视化</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+    <h1 class="title">瑞利分布（Rayleigh）</h1>
+
+    <div class="toggle-panel">
+        <span class="toggle-label">显示类型：</span>
+        <div class="radio-group">
+            <label class="radio-item"><input type="radio" name="funcType" value="pdf" checked onchange="redrawAll()"> 概率密度函数 (PDF)</label>
+            <label class="radio-item"><input type="radio" name="funcType" value="cdf" onchange="redrawAll()"> 分布函数 (CDF)</label>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <div class="control-left">
+            <div class="control-group">
+                <span class="control-label">尺度参数 σ：</span>
+                <button class="param-btn" onclick="changeSigma(-0.5)">- 0.5</button>
+                <span id="sigmaValue" class="param-display">1.0</span>
+                <button class="param-btn" onclick="changeSigma(0.5)">+ 0.5</button>
+            </div>
+        </div>
+        <div class="control-right">
+            <div class="formula-title">当前分布公式</div>
+            <div class="formula-box" id="formulaDisplay"></div>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <div id="tooltip"></div>
+        <canvas id="distributionCanvas" width="800" height="400"></canvas>
+    </div>
+
+    <div class="relation-panel">
+        <h3 class="relation-title">📊 瑞利分布与常见统计分布的关系</h3>
+        <p class="relation-desc">
+            1. <strong>韦伯分布的特例</strong>：形状参数 k=2 时的韦伯分布<br>
+            2. 两个独立标准正态变量的平方和的平方根服从瑞利分布<br>
+            3. 常用于描述风速、噪声幅度、通信信号强度<br>
+            4. 特征寿命：x=σ 时，累计失效概率为 39.3%
+        </p>
+        <div class="link-group">
+            <a href="weibull.html">韦伯分布</a><a href="normal.html">正态分布</a>
+        </div>
+    </div>
+
+    <script>
+        const canvas=document.getElementById('distributionCanvas'),ctx=canvas.getContext('2d'),tooltip=document.getElementById('tooltip'),formulaDisplay=document.getElementById('formulaDisplay');
+        let sigma=1.0,hoverPoint=null; 
+        const w=800,h=400,pad=50,xMin=0,xMax=10;
+        function getType(){return document.querySelector('input[name="funcType"]:checked').value;}
+        
+        // ✅ 瑞利分布PDF：f(x) = (x/σ²)e^(-x²/(2σ²))，x≥0
+        function rayleighPDF(x) {
+            if(x<=0)return 0;
+            return (x/(sigma*sigma)) * Math.exp(-x*x/(2*sigma*sigma));
+        }
+        
+        // ✅ 瑞利分布CDF：F(x) = 1 - e^(-x²/(2σ²))，x≥0
+        function rayleighCDF(x) {
+            if(x<=0)return 0;
+            return 1 - Math.exp(-x*x/(2*sigma*sigma));
+        }
+        
+        function getY(x){return getType()==='pdf'?rayleighPDF(x):rayleighCDF(x);}
+        
+        function updateFormula(){
+            const sig=sigma.toFixed(1);
+            if(getType()==='pdf'){
+                formulaDisplay.innerHTML=`\\( f(x) = \\dfrac{x}{${sig}^2} e^{-\\dfrac{x^2}{2${sig}^2}} \\quad (x\\geq0) \\)`;
+            }else{
+                formulaDisplay.innerHTML=`\\( F(x) = 1 - e^{-\\dfrac{x^2}{2${sig}^2}} \\quad (x\\geq0) \\)`;
+            }
+            if(window.MathJax) MathJax.typesetPromise([formulaDisplay]);
+        }
+        
+        function changeSigma(d){const ns=sigma+d;if(ns>=0.5&&ns<=5.0){sigma=ns;document.getElementById('sigmaValue').textContent=sigma.toFixed(1);redrawAll();}}
+        
+        function mapX(x){return pad + (x-xMin)/(xMax-xMin)*(w-2*pad);}
+        function mapY(y,maxY){
+            const val = h-pad - (y/maxY)*(h-2*pad);
+            return Math.max(pad, Math.min(h-pad, val));
+        }
+
+        // ✅ 自适应Y轴刻度
+        function drawAxes(maxYVal, isPdf){
+            ctx.clearRect(0,0,w,h);
+            ctx.strokeStyle='#cbd5e0';ctx.lineWidth=1;
+            // 横向网格与刻度
+            let yTicks;
+            if(isPdf){
+                yTicks = [0, maxYVal*0.25, maxYVal*0.5, maxYVal*0.75, maxYVal];
+            }else{
+                yTicks = [0, 0.2, 0.4, 0.6, 0.8, 1.0];
+            }
+            for(let yTick of yTicks){
+                let y = mapY(yTick, isPdf ? maxYVal : 1.0);
+                ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();
+            }
+            // 纵向网格
+            for(let x=pad;x<=w-pad;x+=40){
+                ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();
+            }
+            // 坐标轴
+            ctx.strokeStyle='#2d3748';ctx.lineWidth=2;
+            ctx.beginPath();ctx.moveTo(pad,h-pad);ctx.lineTo(w-pad,h-pad);ctx.stroke();
+            ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,h-pad);ctx.stroke();
+
+            ctx.fillStyle='#333';ctx.font='12px Arial';ctx.textAlign='center';
+            // X轴刻度
+            for(let x=0;x<=10;x+=2){
+                ctx.fillText(x,mapX(x),h-pad+15);
+            }
+            // Y轴刻度文字
+            ctx.textAlign='right';
+            for(let yTick of yTicks){
+                let y = mapY(yTick, isPdf ? maxYVal : 1.0);
+                ctx.fillText(yTick.toFixed(3), pad-6, y+4);
+            }
+        }
+
+        function redrawAll(){
+            const isPdf = getType() === "pdf";
+            let maxYVal;
+            
+            if(isPdf){
+                // 瑞利分布众数在x=σ处
+                maxYVal = rayleighPDF(sigma) * 1.25;
+            }else{
+                maxYVal = 1.0;
+            }
+
+            updateFormula();
+            drawAxes(maxYVal, isPdf);
+
+            // 画连续曲线
+            ctx.strokeStyle='#4299e1';ctx.lineWidth=3;ctx.beginPath();
+            for(let px=0;px<w;px++){
+                const x = xMin + px/w*(xMax-xMin) + 0.01;
+                const y = getY(x);
+                const cx = mapX(x);
+                const cy = mapY(y, isPdf ? maxYVal : 1.0);
+                px===0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+            }
+            ctx.stroke();
+
+            // 悬浮红点
+            if(hoverPoint){
+                const {x} = hoverPoint;
+                const y = getY(x);
+                const cx = mapX(x);
+                const cy = mapY(y, isPdf ? maxYVal : 1.0);
+                ctx.fillStyle="#ff5050";
+                ctx.beginPath();ctx.arc(cx,cy,5,0,Math.PI*2);ctx.fill();
+            }
+        }
+
+        canvas.addEventListener('mousemove',e=>{
+            const rect = canvas.getBoundingClientRect();
+            const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+            if(mx>=pad&&mx<=w-pad&&my>=pad&&my<=h-pad){
+                const x = xMin + (mx-pad)/(w-2*pad)*(xMax-xMin);
+                const y = getY(x);
+                hoverPoint={x,y};
+                tooltip.style.display="block";
+                tooltip.style.left=(mx+12)+"px";
+                tooltip.style.top=(my-24)+"px";
+                tooltip.textContent=`X=${x.toFixed(2)}  Y=${y.toFixed(4)}`;
+            }else{hoverPoint=null;tooltip.style.display="none";}
+            redrawAll();
+        });
+        
+        canvas.addEventListener('mouseleave',()=>{hoverPoint=null;tooltip.style.display="none";redrawAll();});
+        window.addEventListener('load',redrawAll);
+    </script>
+</body>
+</html>

@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>柯西分布（Cauchy）交互可视化</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+    <h1 class="title">柯西分布（Cauchy）</h1>
+
+    <div class="toggle-panel">
+        <span class="toggle-label">显示类型：</span>
+        <div class="radio-group">
+            <label class="radio-item"><input type="radio" name="funcType" value="pdf" checked onchange="redrawAll()"> 概率密度函数 (PDF)</label>
+            <label class="radio-item"><input type="radio" name="funcType" value="cdf" onchange="redrawAll()"> 分布函数 (CDF)</label>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <div class="control-left">
+            <div class="control-group">
+                <span class="control-label">位置参数 x₀：</span>
+                <button class="param-btn" onclick="changeX0(-0.5)">- 0.5</button>
+                <span id="x0Value" class="param-display">0.0</span>
+                <button class="param-btn" onclick="changeX0(0.5)">+ 0.5</button>
+            </div>
+            <div class="control-group">
+                <span class="control-label">尺度参数 γ：</span>
+                <button class="param-btn" onclick="changeGamma(-0.2)">- 0.2</button>
+                <span id="gammaValue" class="param-display">1.0</span>
+                <button class="param-btn" onclick="changeGamma(0.2)">+ 0.2</button>
+            </div>
+        </div>
+        <div class="control-right">
+            <div class="formula-title">当前分布公式</div>
+            <div class="formula-box" id="formulaDisplay"></div>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <div id="tooltip"></div>
+        <canvas id="distributionCanvas" width="800" height="400"></canvas>
+    </div>
+
+    <div class="relation-panel">
+        <h3 class="relation-title">📊 柯西分布与常见统计分布的关系</h3>
+        <p class="relation-desc">
+            1. <strong>极重尾分布</strong>，无均值、无方差<br>
+            2. 标准柯西 = 两个独立正态比值的分布<br>
+            3. 是 t 分布（df=1）的特例<br>
+            4. 应用于光谱线、共振、物理、金融极端波动
+        </p>
+        <div class="link-group">
+            <a href="t.html">t分布</a><a href="normal.html">正态分布</a>
+        </div>
+    </div>
+
+    <script>
+        const canvas=document.getElementById('distributionCanvas'),ctx=canvas.getContext('2d'),tooltip=document.getElementById('tooltip'),formulaDisplay=document.getElementById('formulaDisplay');
+        let x0=0.0,gamma=1.0,hoverPoint=null; 
+        const w=800,h=400,pad=50,xMin=-10,xMax=10;
+        function getType(){return document.querySelector('input[name="funcType"]:checked').value;}
+        
+        function cauchyPDF(x) {
+            return 1/(Math.PI*gamma*(1+Math.pow((x-x0)/gamma,2)));
+        }
+        function cauchyCDF(x) {
+            return 0.5 + (1/Math.PI)*Math.atan((x-x0)/gamma);
+        }
+        function getY(x){return getType()==='pdf'?cauchyPDF(x):cauchyCDF(x);}
+        
+        function updateFormula(){
+            const x0v=x0.toFixed(1),gv=gamma.toFixed(1);
+            if(getType()==='pdf'){
+                formulaDisplay.innerHTML=`\\( f(x) = \\dfrac{1}{\\pi \\cdot ${gv} \\left(1+\\left(\\dfrac{x-${x0v}}{${gv}}\\right)^2\\right)} \\)`;
+            }else{
+                formulaDisplay.innerHTML=`\\( F(x) = \\dfrac{1}{2} + \\dfrac{1}{\\pi}\\arctan\\left(\\dfrac{x-${x0v}}{${gv}}\\right) \\)`;
+            }
+            if(window.MathJax) MathJax.typesetPromise([formulaDisplay]).catch(e=>console.log('MathJax error:',e));
+        }
+        
+        function changeX0(d){x0+=d;document.getElementById('x0Value').textContent=x0.toFixed(1);redrawAll();}
+        function changeGamma(d){const ng=gamma+d;if(ng>=0.2&&ng<=5.0){gamma=ng;document.getElementById('gammaValue').textContent=gamma.toFixed(1);redrawAll();}}
+        
+        function mapX(x){return pad + (x-xMin)/(xMax-xMin)*(w-2*pad);}
+        function mapY(y,maxY){return Math.max(pad, Math.min(h-pad, h-pad - (y/maxY)*(h-2*pad)));}
+
+        function drawAxes(maxYVal, isPdf){
+            ctx.clearRect(0,0,w,h);
+            ctx.strokeStyle='#cbd5e0';ctx.lineWidth=1;
+            const yTicks = isPdf ? [0, maxYVal*0.25, maxYVal*0.5, maxYVal*0.75, maxYVal]
+                                  : [0,0.2,0.4,0.6,0.8,1.0];
+            yTicks.forEach(t=>{let y=mapY(t,isPdf?maxYVal:1);ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();});
+            for(let x=pad;x<=w-pad;x+=40){ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();}
+            ctx.strokeStyle='#2d3748';ctx.lineWidth=2;
+            ctx.beginPath();ctx.moveTo(pad,h-pad);ctx.lineTo(w-pad,h-pad);ctx.stroke();
+            ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,h-pad);ctx.stroke();
+            const x0line=mapX(x0);ctx.strokeStyle='#ff7070';ctx.setLineDash([5,3]);ctx.beginPath();ctx.moveTo(x0line,pad);ctx.lineTo(x0line,h-pad);ctx.stroke();ctx.setLineDash([]);
+            ctx.fillStyle='#333';ctx.font='12px Arial';ctx.textAlign='center';
+            for(let x=-8;x<=8;x+=4)ctx.fillText(x,mapX(x),h-pad+15);
+            ctx.textAlign='right';yTicks.forEach(t=>ctx.fillText(t.toFixed(3),pad-6,mapY(t,isPdf?maxYVal:1)+4));
+        }
+
+        function redrawAll(){
+            const isPdf=getType()==="pdf";
+            const maxYVal=isPdf?cauchyPDF(x0)*1.25:1.0;
+            updateFormula();drawAxes(maxYVal,isPdf);
+            ctx.strokeStyle='#4299e1';ctx.lineWidth=3;ctx.beginPath();
+            for(let px=0;px<w;px++){
+                const x=xMin+px/w*(xMax-xMin);
+                const y=getY(x);
+                const cx=mapX(x),cy=mapY(y,isPdf?maxYVal:1);
+                px===0?ctx.moveTo(cx,cy):ctx.lineTo(cx,cy);
+            }
+            ctx.stroke();
+            if(hoverPoint){
+                const {x}=hoverPoint;const y=getY(x);
+                ctx.fillStyle="#ff5050";ctx.beginPath();ctx.arc(mapX(x),mapY(y,isPdf?maxYVal:1),5,0,Math.PI*2);ctx.fill();
+            }
+        }
+
+        canvas.addEventListener('mousemove',e=>{
+            const rect=canvas.getBoundingClientRect();
+            const mx=e.clientX-rect.left,my=e.clientY-rect.top;
+            if(mx>=pad&&mx<=w-pad&&my>=pad&&my<=h-pad){
+                const x=xMin+(mx-pad)/(w-2*pad)*(xMax-xMin);
+                hoverPoint={x};
+                tooltip.style.display="block";tooltip.style.left=(mx+12)+"px";tooltip.style.top=(my-24)+"px";
+                tooltip.textContent=`X=${x.toFixed(2)}  Y=${getY(x).toFixed(4)}`;
+            }else{hoverPoint=null;tooltip.style.display="none";}
+            redrawAll();
+        });
+        canvas.addEventListener('mouseleave',()=>{hoverPoint=null;tooltip.style.display="none";redrawAll();});
+        window.addEventListener('load',redrawAll);
+    </script>
+</body>
+</html>

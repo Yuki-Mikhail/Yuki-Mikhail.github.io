@@ -1,92 +1,250 @@
 <!DOCTYPE html>
-<html lang="zh-Cn">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Yuki Project</title>
-        <style>
-            body {
-                background-image: url('图寻学院0.png');
-                background-size: cover;
-                background-position: center;
-                background-repeat: no-repeat;
-                background-attachment: fixed;
-                margin: 0;
-                padding: 0;
-                min-height: 100vh;
-                font-family: Arial, sans-serif;
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>统计分布可视化</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Microsoft YaHei', sans-serif;
+        }
+        body {
+            background-color: #ffffff;
+            overflow: hidden;
+        }
+        #graph-container {
+            width: 100vw;
+            height: 100vh;
+            position: relative;
+        }
+        .node {
+            cursor: pointer;
+        }
+        .node:hover {
+            filter: brightness(1.1);
+        }
+        .link {
+            stroke: #cbd5e0;
+            stroke-width: 2;
+        }
+        .node-label {
+            font-size: 13px;
+            font-weight: 500;
+            pointer-events: none;
+            text-anchor: middle;
+            fill: #2d3748;
+        }
+    </style>
+</head>
+<body>
+    <div id="graph-container"></div>
+
+    <!-- 引入 D3.js -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7"></script>
+    <script>
+        // 节点数据（新增4个分布）
+        const nodes = [
+            { id: "bernoulli", label: "伯努利", type: "discrete", url: "bernoulli.html" },
+            { id: "binomial", label: "二项", type: "discrete", url: "binomial.html" },
+            { id: "geometric", label: "几何", type: "discrete", url: "geometric.html" },
+            { id: "negative_binomial", label: "负二项", type: "discrete", url: "negative_binomial.html" },
+            { id: "poisson", label: "泊松", type: "discrete", url: "poisson.html" },
+            { id: "hypergeometric", label: "超几何", type: "discrete", url: "hypergeometric.html" },
+            { id: "multinomial", label: "多项", type: "discrete", url: "multinomial.html" },
+            { id: "uniform", label: "均匀", type: "continuous", url: "uniform.html" },
+            { id: "normal", label: "正态", type: "continuous", url: "normal.html" },
+            { id: "exponential", label: "指数", type: "continuous", url: "exponential.html" },
+            { id: "weibull", label: "韦伯", type: "continuous", url: "weibull.html" },
+            { id: "rayleigh", label: "瑞利", type: "continuous", url: "rayleigh.html" },
+            { id: "logistic", label: "逻辑", type: "continuous", url: "logistic.html" },
+            { id: "beta", label: "Beta", type: "continuous", url: "beta.html" },
+            { id: "dirichlet", label: "Dirichlet", type: "continuous", url: "dirichlet.html" },
+            { id: "gamma", label: "伽马", type: "continuous", url: "gamma.html" },
+            { id: "chi", label: "卡方", type: "continuous", url: "chi.html" },
+            { id: "t", label: "t分布", type: "continuous", url: "t.html" },
+            { id: "f", label: "F分布", type: "continuous", url: "f.html" },
+            { id: "lognormal", label: "对数正态", type: "continuous", url: "lognormal.html" },
+            { id: "laplace", label: "拉普拉斯", type: "continuous", url: "laplace.html" },
+            { id: "pareto", label: "帕累托", type: "continuous", url: "pareto.html" },
+            { id: "cauchy", label: "柯西", type: "continuous", url: "cauchy.html" },
+            { id: "invgauss", label: "逆高斯", type: "continuous", url: "invgauss.html" }
+        ];
+
+        // 关系边数据（新增4个分布的关系）
+        const links = [
+            // 离散分布关系
+            { source: "bernoulli", target: "binomial" },
+            { source: "bernoulli", target: "geometric" },
+            { source: "bernoulli", target: "negative_binomial" },
+            { source: "bernoulli", target: "multinomial" },
+            { source: "geometric", target: "negative_binomial" },
+            { source: "binomial", target: "poisson" },
+            { source: "binomial", target: "hypergeometric" },
+            { source: "binomial", target: "multinomial" },
+            { source: "multinomial", target: "dirichlet" },
+            
+            // 连续分布关系
+            { source: "uniform", target: "normal" },
+            { source: "uniform", target: "beta" },
+            { source: "normal", target: "lognormal" },
+            { source: "normal", target: "chi" },
+            { source: "normal", target: "t" },
+            { source: "normal", target: "logistic" },
+            { source: "normal", target: "rayleigh" },
+            { source: "normal", target: "laplace" },
+            { source: "normal", target: "invgauss" },
+            { source: "chi", target: "t" },
+            { source: "chi", target: "f" },
+            { source: "t", target: "f" },
+            { source: "t", target: "cauchy" },
+            { source: "exponential", target: "gamma" },
+            { source: "exponential", target: "weibull" },
+            { source: "exponential", target: "rayleigh" },
+            { source: "exponential", target: "laplace" },
+            { source: "exponential", target: "pareto" },
+            { source: "gamma", target: "chi" },
+            { source: "gamma", target: "normal" },
+            { source: "gamma", target: "beta" },
+            { source: "gamma", target: "invgauss" },
+            { source: "weibull", target: "exponential" },
+            { source: "weibull", target: "normal" },
+            { source: "weibull", target: "rayleigh" },
+            { source: "weibull", target: "pareto" },
+            { source: "rayleigh", target: "normal" },
+            { source: "rayleigh", target: "weibull" },
+            { source: "logistic", target: "normal" },
+            { source: "beta", target: "normal" },
+            { source: "beta", target: "dirichlet" },
+            { source: "laplace", target: "exponential" },
+            { source: "laplace", target: "normal" },
+            { source: "laplace", target: "cauchy" },
+            { source: "laplace", target: "logistic" },
+            { source: "pareto", target: "exponential" },
+            { source: "pareto", target: "weibull" },
+            { source: "pareto", target: "cauchy" },
+            { source: "cauchy", target: "normal" },
+            { source: "cauchy", target: "t" },
+            { source: "invgauss", target: "normal" },
+            { source: "invgauss", target: "gamma" },
+            { source: "invgauss", target: "weibull" },
+            
+            // 离散-连续关系
+            { source: "poisson", target: "normal" },
+            { source: "binomial", target: "normal" },
+            { source: "geometric", target: "exponential" },
+            { source: "negative_binomial", target: "poisson" },
+            { source: "hypergeometric", target: "binomial" },
+            { source: "bernoulli", target: "beta" },
+            { source: "binomial", target: "beta" },
+            { source: "bernoulli", target: "logistic" },
+            { source: "multinomial", target: "normal" },
+            { source: "bernoulli", target: "laplace" }
+        ];
+
+        // 颜色映射
+        const colorMap = {
+            discrete: "#4299e1",
+            continuous: "#48bb78"
+        };
+
+        // 画布设置
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+
+        const svg = d3.select("#graph-container")
+            .append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        // 力导向模拟
+        const simulation = d3.forceSimulation(nodes)
+            .force("link", d3.forceLink(links).id(d => d.id).distance(120))
+            .force("charge", d3.forceManyBody().strength(-1000))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collision", d3.forceCollide().radius(45));
+
+        // 绘制连线
+        const link = svg.append("g")
+            .selectAll("line")
+            .data(links)
+            .join("line")
+            .attr("class", "link");
+
+        // 绘制节点
+        const node = svg.append("g")
+            .selectAll("circle")
+            .data(nodes)
+            .join("circle")
+            .attr("class", "node")
+            .attr("r", 35)
+            .attr("fill", d => colorMap[d.type])
+            .attr("stroke", "#2d3748")
+            .attr("stroke-width", 2)
+            .call(drag(simulation))
+            .on("click", (event, d) => {
+                window.open(d.url, '_blank');
+            });
+
+        // 绘制标签
+        const label = svg.append("g")
+            .selectAll("text")
+            .data(nodes)
+            .join("text")
+            .attr("class", "node-label")
+            .text(d => d.label);
+
+        // 拖拽行为
+        function drag(simulation) {
+            function dragstarted(event) {
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                event.subject.fx = event.subject.x;
+                event.subject.fy = event.subject.y;
             }
-            .container {
-                background-color: rgba(255, 255, 255, 0.8);
-                max-width: 80%;
-                margin: 40px auto;
-                padding: 30px;
-                border-radius: 10px;
-                box-shadow: 0 0 20px rgba(0, 0, 0, 0.1);
-                max-height: 80vh;
-                overflow-y: auto;
+
+            function dragged(event) {
+                event.subject.fx = event.x;
+                event.subject.fy = event.y;
             }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <h1>人文大类</h1>
-            <h2>代码</h2>
-            <a href="nation_code.html" >国家代码</a><br>
-            <a href="national_flag.html" >国旗</a><br>
-            <a href="nation_code.html" >国家代码</a><br>
-            <a href="nation_code.html" >国家代码</a><br>
-            <a href="nation_code.html" >国家代码</a><br>
-            <a href="nation_code.html" >国家代码</a><br>
-            <a href="nation_code.html" >国家代码</a>
-            <h2>建筑</h2>
-            <a href="nation_code.html" >住宅建筑</a>(包含n个子类)<br>
-            <a href="nation_code.html" >电线杆</a>(包含n个子类)<br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)<br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)<br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)<br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)
-            <h2>语言</h2>
-            <a href="latin_language.html" >拉丁字母语言</a>(包含n个子类)<br>
-            <a href="SEA_language.html" >西里尔字母语言</a>(包含n个子类)<br>
-            <a href="SEA_language.html" >东-南亚语言</a>(包含n个子类)<br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)<br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)<br>
-            <a href="important_concept.html" >重要概念</a>(包含n个子类)
-            <h2>交通</h2>
-            <a href="LR_Drive.html" >行驶方向</a><br>
-            <a href="road_line.html" >道路标线</a><br>
-            <a href="nation_code.html" >车牌</a><br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)<br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)<br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)
-            <h2>其他</h2>
-            <a href="agriculture.html" >农业</a>(包含n个子类)<br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)<br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)<br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)<br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)<br>
-            <a href="nation_code.html" >国家代码</a>(包含n个子类)
-            <h1>自然大类</h1>
-            <a href="nation_code.html" >气候</a>(包含n个子类)<br>
-            <a href="nation_code.html" >地貌</a>(包含n个子类)<br>
-            <a href="nation_code.html" >土壤</a>(包含n个子类)<br>
-            <a href="nation_code.html" >植被</a>(包含n个子类)
-            <h1>外链</h1>
-            <h2>图寻</h2>
-            <a href="https://tuxun.fun/" >图寻</a><br>
-            <a href="https://www.yuque.com/chaofun/tuxun/" >图寻文档</a><br>
-            <a href="https://www.plonkit.net/" >plonkit</a><br>
-            <h2>地图</h2>
-            <a href="https://www.openstreetmap.org/" >OpenStreetMap</a><br>
-            <a href="https://www.google.com/maps/" >Google Maps</a><br>
-            <a href="https://map.baidu.com/" >百度地图</a><br>
-            <a href="https://map.qq.com/" >腾讯地图</a><br>
-            <a href="https://www.tianditu.gov.cn/" >天地图</a><br>
-            <h2>植物学</h2>
-            <a href="https://www.gbif.org/" >GBIF</a><br>
-            <h2>电话区号</h2>
-            <a href="https://www.chahaoba.com/%E9%A6%96%E9%A1%B5" >查号吧</a><br>
-        </div>
-    </body>
+
+            function dragended(event) {
+                if (!event.active) simulation.alphaTarget(0);
+                event.subject.fx = null;
+                event.subject.fy = null;
+            }
+
+            return d3.drag()
+                .on("start", dragstarted)
+                .on("drag", dragged)
+                .on("end", dragended);
+        }
+
+        // 更新位置
+        simulation.on("tick", () => {
+            link
+                .attr("x1", d => d.source.x)
+                .attr("y1", d => d.source.y)
+                .attr("x2", d => d.target.x)
+                .attr("y2", d => d.target.y);
+
+            node
+                .attr("cx", d => d.x)
+                .attr("cy", d => d.y);
+
+            label
+                .attr("x", d => d.x)
+                .attr("y", d => d.y + 4);
+        });
+
+        // 窗口大小变化时重新调整
+        window.addEventListener('resize', () => {
+            const newWidth = window.innerWidth;
+            const newHeight = window.innerHeight;
+            svg.attr("width", newWidth).attr("height", newHeight);
+            simulation.force("center", d3.forceCenter(newWidth / 2, newHeight / 2));
+            simulation.alpha(0.3).restart();
+        });
+    </script>
+</body>
 </html>

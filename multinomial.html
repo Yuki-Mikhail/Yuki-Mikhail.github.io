@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>多项分布交互可视化</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        .legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.95);
+            padding: 10px 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            font-size: 13px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            margin-right: 10px;
+            border-radius: 3px;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">多项分布（Multinomial）</h1>
+
+    <div class="control-panel">
+        <div class="control-left">
+            <div class="control-group">
+                <span class="control-label">试验次数 n：</span>
+                <button class="param-btn" onclick="changeN(-2)">- 2</button>
+                <span id="nValue" class="param-display">10</span>
+                <button class="param-btn" onclick="changeN(2)">+ 2</button>
+            </div>
+            <div class="control-group">
+                <span class="control-label">类别1概率 p₁：</span>
+                <button class="param-btn" onclick="changeP1(-0.1)">- 0.1</button>
+                <span id="p1Value" class="param-display">0.3</span>
+                <button class="param-btn" onclick="changeP1(0.1)">+ 0.1</button>
+            </div>
+            <div class="control-group">
+                <span class="control-label">类别2概率 p₂：</span>
+                <button class="param-btn" onclick="changeP2(-0.1)">- 0.1</button>
+                <span id="p2Value" class="param-display">0.5</span>
+                <button class="param-btn" onclick="changeP2(0.1)">+ 0.1</button>
+            </div>
+        </div>
+        <div class="control-right">
+            <div class="formula-title">当前分布公式</div>
+            <div class="formula-box" id="formulaDisplay"></div>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <div id="tooltip"></div>
+        <canvas id="distributionCanvas" width="800" height="400"></canvas>
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background: #4299e1;"></div>
+                <span>类别1 (p₁)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #48bb78;"></div>
+                <span>类别2 (p₂)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #ed8936;"></div>
+                <span>类别3 (p₃)</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="relation-panel">
+        <h3 class="relation-title">📊 多项分布与常见统计分布的关系</h3>
+        <p class="relation-desc">
+            1. <strong>伯努利分布的多类别推广</strong><br>
+            2. 经典例子：扔骰子n次，每个点数出现的次数<br>
+            3. k=2时退化为二项分布<br>
+            4. 应用于多分类问题、文本分类、多项检验
+        </p>
+        <div class="link-group">
+            <a href="bernoulli.html">伯努利</a><a href="binomial.html">二项</a>
+        </div>
+    </div>
+
+    <script>
+        const canvas=document.getElementById('distributionCanvas'),ctx=canvas.getContext('2d'),tooltip=document.getElementById('tooltip'),formulaDisplay=document.getElementById('formulaDisplay');
+        let n=10,p1=0.3,p2=0.5,hoverPoint=null; 
+        const w=800,h=400,pad=50,xMin=-0.5;
+        const colors = ['#4299e1', '#48bb78', '#ed8936'];
+        
+        // ✅ 高精度对数伽马函数
+        function logGamma(z) {
+            const g=7,c=[0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+            if(z<0.5)return Math.log(Math.PI/Math.sin(Math.PI*z))-logGamma(1-z);
+            z--;let x=c[0];for(let i=1;i<g+2;i++)x+=c[i]/(z+i);
+            const t=z+g+0.5;
+            return 0.5*Math.log(2*Math.PI)+(z+0.5)*Math.log(t)-t+Math.log(x);
+        }
+        
+        // ✅ 组合数
+        function comb(nn, kk) {
+            if(kk<0||kk>nn)return 0;
+            if(kk===0||kk===nn)return 1;
+            return Math.exp(logGamma(nn+1)-logGamma(kk+1)-logGamma(nn-kk+1));
+        }
+        
+        // ✅ 多项分布边缘PMF
+        function multinomPMF(k, dim) {
+            const p3 = 1 - p1 - p2;
+            if(k<0||k>n||!Number.isInteger(k))return 0;
+            
+            let p;
+            if(dim===0) p = p1;
+            else if(dim===1) p = p2;
+            else p = p3;
+            
+            return comb(n, k) * Math.pow(p, k) * Math.pow(1-p, n-k);
+        }
+        
+        function updateFormula(){
+            const p3 = (1 - p1 - p2).toFixed(1);
+            formulaDisplay.innerHTML=`\\( P(X_1=k_1,X_2=k_2,X_3=k_3) = \\dfrac{n!}{k_1!k_2!k_3!} p_1^{k_1}p_2^{k_2}p_3^{k_3} \\)`;
+            if(window.MathJax) MathJax.typesetPromise([formulaDisplay]);
+        }
+        
+        function changeN(d){const nn=n+d;if(nn>=2&&nn<=30){n=nn;document.getElementById('nValue').textContent=n;redrawAll();}}
+        function changeP1(d){const np=p1+d;if(np>=0.1&&np<=0.7&&np+p2<=0.9){p1=np;document.getElementById('p1Value').textContent=p1.toFixed(1);redrawAll();}}
+        function changeP2(d){const np=p2+d;if(np>=0.1&&np<=0.7&&p1+np<=0.9){p2=np;document.getElementById('p2Value').textContent=p2.toFixed(1);redrawAll();}}
+        
+        function mapX(x, xMaxVal){return pad + (x-xMin)/(xMaxVal-xMin)*(w-2*pad);}
+        function mapY(y,maxY){
+            const val = h-pad - (y/maxY)*(h-2*pad);
+            return Math.max(pad, Math.min(h-pad, val));
+        }
+
+        // ✅ 自适应Y轴刻度
+        function drawAxes(xMaxVal, maxYVal){
+            ctx.clearRect(0,0,w,h);
+            ctx.strokeStyle='#cbd5e0';ctx.lineWidth=1;
+            // 横向网格与刻度
+            const yTicks = [0, maxYVal*0.25, maxYVal*0.5, maxYVal*0.75, maxYVal];
+            for(let yTick of yTicks){
+                let y = mapY(yTick, maxYVal);
+                ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();
+            }
+            // 纵向网格
+            for(let x=pad;x<=w-pad;x+=40){
+                ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();
+            }
+            // 坐标轴
+            ctx.strokeStyle='#2d3748';ctx.lineWidth=2;
+            ctx.beginPath();ctx.moveTo(pad,h-pad);ctx.lineTo(w-pad,h-pad);ctx.stroke();
+            ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,h-pad);ctx.stroke();
+
+            ctx.fillStyle='#333';ctx.font='12px Arial';ctx.textAlign='center';
+            // X轴刻度
+            const step=Math.max(1,Math.floor(xMaxVal/10));
+            for(let k=0;k<=xMaxVal;k+=step){
+                ctx.fillText(k,mapX(k,xMaxVal),h-pad+15);
+            }
+            // Y轴刻度文字
+            ctx.textAlign='right';
+            for(let yTick of yTicks){
+                let y = mapY(yTick, maxYVal);
+                ctx.fillText(yTick.toFixed(3), pad-6, y+4);
+            }
+        }
+
+        function redrawAll(){
+            const xMaxVal = n + 0.5;
+            
+            // 计算三个维度的最大概率
+            let maxYVal = 0;
+            for(let dim=0;dim<3;dim++){
+                for(let k=0;k<=n;k++){
+                    maxYVal = Math.max(maxYVal, multinomPMF(k, dim));
+                }
+            }
+            maxYVal *= 1.25;
+
+            updateFormula();
+            drawAxes(xMaxVal, maxYVal);
+
+            // 画三个类别的柱状图（并排显示）
+            const barWidth = Math.max(3, (w-2*pad)/(n+2)/3 - 2);
+            for(let k=0;k<=n;k++){
+                for(let dim=0;dim<3;dim++){
+                    let yVal = multinomPMF(k, dim);
+                    let cx = mapX(k, xMaxVal) + (dim-1)*(barWidth+2);
+                    let cy = mapY(yVal, maxYVal);
+                    ctx.fillStyle = colors[dim];
+                    ctx.fillRect(cx-barWidth/2, cy, barWidth, (h-pad)-cy);
+                }
+            }
+
+            // 悬浮红点（显示当前k值三个类别的概率）
+            if(hoverPoint){
+                const {k} = hoverPoint;
+                if(k>=0&&k<=n){
+                    for(let dim=0;dim<3;dim++){
+                        let yVal = multinomPMF(k, dim);
+                        let cx = mapX(k, xMaxVal) + (dim-1)*(barWidth+2);
+                        let cy = mapY(yVal, maxYVal);
+                        ctx.fillStyle = "#ff5050";
+                        ctx.beginPath();ctx.arc(cx,cy,4,0,Math.PI*2);ctx.fill();
+                    }
+                }
+            }
+        }
+
+        canvas.addEventListener('mousemove',e=>{
+            const rect = canvas.getBoundingClientRect();
+            const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+            if(mx>=pad&&mx<=w-pad&&my>=pad&&my<=h-pad){
+                const xMaxVal = n + 0.5;
+                const x = xMin + (mx-pad)/(w-2*pad)*(xMaxVal-xMin);
+                const k = Math.round(x);
+                if(k>=0&&k<=n){
+                    hoverPoint={k};
+                    tooltip.style.display="block";
+                    tooltip.style.left=(mx+12)+"px";
+                    tooltip.style.top=(my-24)+"px";
+                    const p3 = 1 - p1 - p2;
+                    tooltip.textContent=`k=${k}  类别1=${multinomPMF(k,0).toFixed(4)}  类别2=${multinomPMF(k,1).toFixed(4)}  类别3=${multinomPMF(k,2).toFixed(4)}`;
+                }else{hoverPoint=null;tooltip.style.display="none";}
+            }else{hoverPoint=null;tooltip.style.display="none";}
+            redrawAll();
+        });
+        
+        canvas.addEventListener('mouseleave',()=>{hoverPoint=null;tooltip.style.display="none";redrawAll();});
+        window.addEventListener('load',redrawAll);
+    </script>
+</body>
+</html>

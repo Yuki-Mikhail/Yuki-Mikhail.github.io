@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>均匀分布交互可视化</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+    <h1 class="title">均匀分布（Uniform）</h1>
+
+    <div class="toggle-panel">
+        <span class="toggle-label">显示类型：</span>
+        <div class="radio-group">
+            <label class="radio-item"><input type="radio" name="funcType" value="pdf" checked onchange="redrawAll()"> 概率密度函数 (PDF)</label>
+            <label class="radio-item"><input type="radio" name="funcType" value="cdf" onchange="redrawAll()"> 分布函数 (CDF)</label>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <div class="control-left">
+            <div class="control-group">
+                <span class="control-label">下限 a：</span>
+                <button class="param-btn" onclick="changeA(-0.5)">- 0.5</button>
+                <span id="aValue" class="param-display">0.0</span>
+                <button class="param-btn" onclick="changeA(0.5)">+ 0.5</button>
+            </div>
+            <div class="control-group">
+                <span class="control-label">上限 b：</span>
+                <button class="param-btn" onclick="changeB(-0.5)">- 0.5</button>
+                <span id="bValue" class="param-display">1.0</span>
+                <button class="param-btn" onclick="changeB(0.5)">+ 0.5</button>
+            </div>
+        </div>
+        <div class="control-right">
+            <div class="formula-title">当前分布公式</div>
+            <div class="formula-box" id="formulaDisplay"></div>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <div id="tooltip"></div>
+        <canvas id="distributionCanvas" width="800" height="400"></canvas>
+    </div>
+
+    <div class="relation-panel">
+        <h3 class="relation-title">📊 均匀分布与常见统计分布的关系</h3>
+        <p class="relation-desc">
+            1. <strong>区间内等概率分布</strong>：[a,b]上任意点概率密度相同<br>
+            2. <strong>随机数生成的基础</strong>：所有分布都可通过均匀分布变换得到<br>
+            3. 是贝叶斯统计中常用的无信息先验分布<br>
+            4. 描述"完全随机"的连续变量
+        </p>
+        <div class="link-group">
+            <a href="normal.html">正态</a><a href="exponential.html">指数</a><a href="weibull.html">韦伯</a>
+            <a href="gamma.html">伽马</a><a href="bernoulli.html">伯努利</a><a href="binomial.html">二项</a>
+            <a href="poisson.html">泊松</a><a href="geometric.html">几何</a><a href="negative_binomial.html">负二项</a>
+        </div>
+    </div>
+
+    <script>
+        const canvas=document.getElementById('distributionCanvas'),ctx=canvas.getContext('2d'),tooltip=document.getElementById('tooltip'),formulaDisplay=document.getElementById('formulaDisplay');
+        let a=0.0,b=1.0,hoverPoint=null; 
+        const w=800,h=400,pad=50,xMin=-5,xMax=5;
+        function getType(){return document.querySelector('input[name="funcType"]:checked').value;}
+        
+        // 均匀分布PDF：f(x)=1/(b-a)，a≤x≤b；否则0
+        function uniformPDF(x) {
+            if(x<a || x>b) return 0;
+            return 1/(b-a);
+        }
+        
+        // 均匀分布CDF：F(x)=(x-a)/(b-a)，a≤x≤b；x<a时0，x>b时1
+        function uniformCDF(x) {
+            if(x<a) return 0;
+            if(x>b) return 1;
+            return (x-a)/(b-a);
+        }
+        
+        function getY(x){return getType()==='pdf'?uniformPDF(x):uniformCDF(x);}
+        
+        function updateFormula(){
+            const aa=a.toFixed(1),bb=b.toFixed(1);
+            if(getType()==='pdf'){
+                formulaDisplay.innerHTML=`\\( f(x) = \\begin{cases} \\dfrac{1}{${bb}-${aa}} & ${aa}\\leq x\\leq ${bb} \\\\ 0 & \\text{其他} \\end{cases} \\)`;
+            }else{
+                formulaDisplay.innerHTML=`\\( F(x) = \\begin{cases} 0 & x<${aa} \\\\ \\dfrac{x-${aa}}{${bb}-${aa}} & ${aa}\\leq x\\leq ${bb} \\\\ 1 & x>${bb} \\end{cases} \\)`;
+            }
+            if(window.MathJax) MathJax.typesetPromise([formulaDisplay]);
+        }
+        
+        function changeA(d){const na=a+d;if(na<b-0.5){a=na;document.getElementById('aValue').textContent=a.toFixed(1);redrawAll();}}
+        function changeB(d){const nb=b+d;if(nb>a+0.5){b=nb;document.getElementById('bValue').textContent=b.toFixed(1);redrawAll();}}
+        
+        function mapX(x){return pad + (x-xMin)/(xMax-xMin)*(w-2*pad);}
+        function mapY(y,maxY){
+            const val = h-pad - (y/maxY)*(h-2*pad);
+            return Math.max(pad, Math.min(h-pad, val));
+        }
+
+        // ✅ 自适应Y轴刻度
+        function drawAxes(maxYVal, isPdf){
+            ctx.clearRect(0,0,w,h);
+            ctx.strokeStyle='#cbd5e0';ctx.lineWidth=1;
+            // 横向网格与刻度
+            let yTicks;
+            if(isPdf){
+                yTicks = [0, maxYVal*0.25, maxYVal*0.5, maxYVal*0.75, maxYVal];
+            }else{
+                yTicks = [0, 0.2, 0.4, 0.6, 0.8, 1.0];
+            }
+            for(let yTick of yTicks){
+                let y = mapY(yTick, isPdf ? maxYVal : 1.0);
+                ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();
+            }
+            // 纵向网格
+            for(let x=pad;x<=w-pad;x+=40){
+                ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();
+            }
+            // 坐标轴
+            ctx.strokeStyle='#2d3748';ctx.lineWidth=2;
+            ctx.beginPath();ctx.moveTo(pad,h-pad);ctx.lineTo(w-pad,h-pad);ctx.stroke();
+            ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,h-pad);ctx.stroke();
+            // x=0虚线
+            const x0=mapX(0);ctx.strokeStyle='#ff7070';ctx.setLineDash([5,3]);
+            ctx.beginPath();ctx.moveTo(x0,pad);ctx.lineTo(x0,h-pad);ctx.stroke();ctx.setLineDash([]);
+
+            ctx.fillStyle='#333';ctx.font='12px Arial';ctx.textAlign='center';
+            // X轴刻度
+            for(let x=-4;x<=4;x+=2){
+                ctx.fillText(x, mapX(x), h-pad+15);
+            }
+            // Y轴刻度文字
+            ctx.textAlign='right';
+            for(let yTick of yTicks){
+                let y = mapY(yTick, isPdf ? maxYVal : 1.0);
+                ctx.fillText(yTick.toFixed(3), pad-6, y+4);
+            }
+        }
+
+        function redrawAll(){
+            const isPdf = getType() === "pdf";
+            let maxYVal;
+            
+            if(isPdf){
+                // PDF值为1/(b-a)
+                maxYVal = (1/(b-a)) * 1.25;
+            }else{
+                maxYVal = 1.0;
+            }
+
+            updateFormula();
+            drawAxes(maxYVal, isPdf);
+
+            // 画连续曲线
+            ctx.strokeStyle='#4299e1';ctx.lineWidth=3;ctx.beginPath();
+            for(let px=0;px<w;px++){
+                const x = xMin + px/w*(xMax-xMin);
+                const y = getY(x);
+                const cx = mapX(x);
+                const cy = mapY(y, isPdf ? maxYVal : 1.0);
+                px===0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+            }
+            ctx.stroke();
+
+            // 悬浮红点
+            if(hoverPoint){
+                const {x} = hoverPoint;
+                const y = getY(x);
+                const cx = mapX(x);
+                const cy = mapY(y, isPdf ? maxYVal : 1.0);
+                ctx.fillStyle="#ff5050";
+                ctx.beginPath();ctx.arc(cx,cy,5,0,Math.PI*2);ctx.fill();
+            }
+        }
+
+        canvas.addEventListener('mousemove',e=>{
+            const rect = canvas.getBoundingClientRect();
+            const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+            if(mx>=pad&&mx<=w-pad&&my>=pad&&my<=h-pad){
+                const x = xMin + (mx-pad)/(w-2*pad)*(xMax-xMin);
+                const y = getY(x);
+                hoverPoint={x,y};
+                tooltip.style.display="block";
+                tooltip.style.left=(mx+12)+"px";
+                tooltip.style.top=(my-24)+"px";
+                tooltip.textContent=`X=${x.toFixed(2)}  Y=${y.toFixed(4)}`;
+            }else{hoverPoint=null;tooltip.style.display="none";}
+            redrawAll();
+        });
+        
+        canvas.addEventListener('mouseleave',()=>{hoverPoint=null;tooltip.style.display="none";redrawAll();});
+        window.addEventListener('load',redrawAll);
+    </script>
+</body>
+</html>

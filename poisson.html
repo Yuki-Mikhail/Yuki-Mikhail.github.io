@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>泊松分布交互可视化</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+    <h1 class="title">泊松分布（Poisson）</h1>
+
+    <div class="toggle-panel">
+        <span class="toggle-label">显示类型：</span>
+        <div class="radio-group">
+            <label class="radio-item"><input type="radio" name="funcType" value="pmf" checked onchange="redrawAll()"> 概率质量函数 (PMF)</label>
+            <label class="radio-item"><input type="radio" name="funcType" value="cdf" onchange="redrawAll()"> 分布函数 (CDF)</label>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <div class="control-left">
+            <div class="control-group">
+                <span class="control-label">平均发生率 λ：</span>
+                <button class="param-btn" onclick="changeLambda(-0.5)">- 0.5</button>
+                <span id="lambdaValue" class="param-display">3.0</span>
+                <button class="param-btn" onclick="changeLambda(0.5)">+ 0.5</button>
+            </div>
+        </div>
+        <div class="control-right">
+            <div class="formula-title">当前分布公式</div>
+            <div class="formula-box" id="formulaDisplay"></div>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <div id="tooltip"></div>
+        <canvas id="distributionCanvas" width="800" height="400"></canvas>
+    </div>
+
+    <div class="relation-panel">
+        <h3 class="relation-title">📊 泊松分布与常见统计分布的关系</h3>
+        <p class="relation-desc">
+            1. <strong>经典应用：单位时间事件计数</strong><br>
+            &nbsp;&nbsp;&nbsp;• 电话呼叫数、交通事故数、产品缺陷数<br>
+            2. 二项分布极限：n→∞, p→0, np=λ 时 → 泊松分布<br>
+            3. 泊松过程的事件间隔服从指数分布<br>
+            4. λ很大时→近似正态分布 N(λ, λ)
+        </p>
+        <div class="link-group">
+            <a href="normal.html">正态</a><a href="binomial.html">二项</a><a href="exponential.html">指数</a>
+        </div>
+    </div>
+
+    <script>
+        const canvas=document.getElementById('distributionCanvas'),ctx=canvas.getContext('2d'),tooltip=document.getElementById('tooltip'),formulaDisplay=document.getElementById('formulaDisplay');
+        let lambda=3.0,hoverPoint=null; const w=800,h=400,pad=50,xMin=-0.5;
+        function getType(){return document.querySelector('input[name="funcType"]:checked').value;}
+        
+        // 高精度对数伽马函数（用于计算阶乘）
+        function logGamma(z) {
+            const g=7,c=[0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+            if(z<0.5)return Math.log(Math.PI/Math.sin(Math.PI*z))-logGamma(1-z);
+            z--;let x=c[0];for(let i=1;i<g+2;i++)x+=c[i]/(z+i);
+            const t=z+g+0.5;
+            return 0.5*Math.log(2*Math.PI)+(z+0.5)*Math.log(t)-t+Math.log(x);
+        }
+        
+        // 阶乘的对数形式：ln(k!) = logGamma(k+1)
+        function logFactorial(k) {
+            if(k<0)return -Infinity;
+            if(k===0||k===1)return 0;
+            return logGamma(k+1);
+        }
+        
+        // 泊松分布PMF：P(X=k) = (λ^k e^(-λ))/k!
+        function poissonPMF(k) {
+            if(k<0||k!==Math.floor(k))return 0;
+            // 用对数计算避免数值溢出
+            const logP=k*Math.log(lambda)-lambda-logFactorial(k);
+            return Math.exp(logP);
+        }
+        
+        // 泊松分布CDF：P(X≤k) = Σ_{i=0}^k PMF(i)
+        function poissonCDF(k) {
+            if(k<0)return 0;
+            let sum=0;
+            // 计算到足够大的k，确保覆盖99.99%的概率
+            const maxK=Math.max(Math.floor(lambda+5*Math.sqrt(lambda)),20);
+            for(let i=0;i<=Math.min(Math.floor(k),maxK);i++)sum+=poissonPMF(i);
+            return Math.min(1,sum);
+        }
+        
+        function getY(k){return getType()==='pmf'?poissonPMF(k):poissonCDF(k);}
+        
+        function updateFormula(){const lam=lambda.toFixed(1);if(getType()==='pmf')formulaDisplay.innerHTML=`\\( P(X=k) = \\dfrac{${lam}^k e^{-${lam}}}{k!} \\quad (k=0,1,2,\\dots) \\)`;else formulaDisplay.innerHTML=`\\( P(X\\leq k) = \\sum_{i=0}^{\\lfloor k \\rfloor} \\dfrac{${lam}^i e^{-${lam}}}{i!} \\)`;if(window.MathJax)MathJax.typesetPromise([formulaDisplay]);}
+        function changeLambda(d){const nl=lambda+d;if(nl>=0.5&&nl<=20){lambda=nl;document.getElementById('lambdaValue').textContent=lambda.toFixed(1);redrawAll();}}
+        function mapX(x, xMaxVal){return pad+(x-xMin)/(xMaxVal-xMin)*(w-2*pad);}
+        function mapY(y,maxY){const val=h-pad-(y/maxY)*(h-2*pad);return Math.max(pad,Math.min(h-pad,val));}
+        
+        function drawAxes(xMaxVal){
+            ctx.clearRect(0,0,w,h);
+            ctx.strokeStyle='#cbd5e0';ctx.lineWidth=1;
+            for(let y=pad;y<=h-pad;y+=40){ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();}
+            for(let x=pad;x<=w-pad;x+=40){ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();}
+            ctx.strokeStyle='#2d3748';ctx.lineWidth=2;
+            ctx.beginPath();ctx.moveTo(pad,h-pad);ctx.lineTo(w-pad,h-pad);ctx.stroke();
+            ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,h-pad);ctx.stroke();
+            ctx.fillStyle='#333';ctx.font='12px Arial';ctx.textAlign='center';
+            // 动态调整X轴刻度
+            const step=Math.max(1,Math.floor(xMaxVal/10));
+            for(let k=0;k<=xMaxVal;k+=step){ctx.fillText(k,mapX(k,xMaxVal),h-pad+15);}
+            ctx.textAlign='right';
+            for(let i=0;i<=1;i+=0.2)ctx.fillText(i.toFixed(1),pad-8,mapY(i,1)+4);
+        }
+        
+        function redrawAll(){
+            // 动态确定X轴范围：覆盖λ+5σ，确保显示完整分布
+            const xMaxVal=Math.max(Math.floor(lambda+5*Math.sqrt(lambda)),10);
+            updateFormula();
+            drawAxes(xMaxVal);
+            
+            const isPmf=getType()==='pmf';
+            let maxY=1;
+            if(isPmf){
+                // 找到PMF的最大值
+                const mode=Math.floor(lambda);
+                maxY=Math.max(poissonPMF(mode),poissonPMF(mode+1))*1.1;
+            }
+            
+            // 离散分布画柱状图
+            ctx.fillStyle='#4299e1';
+            const barWidth=Math.max(2,(w-2*pad)/(xMaxVal+1)-2);
+            for(let k=0;k<=xMaxVal;k++){
+                const y=getY(k);
+                const cx=mapX(k,xMaxVal);
+                const cy=mapY(y,maxY);
+                const barX=cx-barWidth/2;
+                const barH=h-pad-cy;
+                ctx.fillRect(barX,cy,barWidth,barH);
+            }
+            
+            // 悬浮点
+            if(hoverPoint){
+                const {k}=hoverPoint;
+                if(k<=xMaxVal){
+                    const y=getY(k);
+                    const cx=mapX(k,xMaxVal);
+                    const cy=mapY(y,maxY);
+                    ctx.fillStyle='#ff5050';
+                    ctx.beginPath();ctx.arc(cx,cy,6,0,Math.PI*2);ctx.fill();
+                }
+            }
+        }
+        
+        canvas.addEventListener('mousemove',e=>{
+            const r=canvas.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+            if(mx>=pad&&mx<=w-pad&&my>=pad&&my<=h-pad){
+                const xMaxVal=Math.max(Math.floor(lambda+5*Math.sqrt(lambda)),10);
+                const x=xMin+(mx-pad)/(w-2*pad)*(xMaxVal-xMin);
+                const k=Math.round(x);
+                if(k>=0&&k<=xMaxVal){
+                    const y=getY(k);
+                    hoverPoint={k,y};
+                    tooltip.style.display='block';
+                    tooltip.style.left=mx+12+'px';
+                    tooltip.style.top=my-24+'px';
+                    tooltip.textContent=`k=${k}  Y=${y.toFixed(4)}`;
+                }else{hoverPoint=null;tooltip.style.display='none';}
+            }else{hoverPoint=null;tooltip.style.display='none';}
+            redrawAll();
+        });
+        canvas.addEventListener('mouseleave',()=>{hoverPoint=null;tooltip.style.display='none';redrawAll();});
+        window.addEventListener('load',redrawAll);
+    </script>
+</body>
+</html>

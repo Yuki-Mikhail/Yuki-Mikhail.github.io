@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>指数分布交互可视化</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+    <h1 class="title">指数分布（Exponential Distribution）</h1>
+
+    <div class="toggle-panel">
+        <span class="toggle-label">显示类型：</span>
+        <div class="radio-group">
+            <label class="radio-item"><input type="radio" name="funcType" value="pdf" checked onchange="redrawAll()"> 概率密度函数 (PDF)</label>
+            <label class="radio-item"><input type="radio" name="funcType" value="cdf" onchange="redrawAll()"> 分布函数 (CDF)</label>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <div class="control-left">
+            <div class="control-group">
+                <span class="control-label">率参数 λ：</span>
+                <button class="param-btn" onclick="changeLambda(-0.2)">- 0.2</button>
+                <span id="lambdaValue" class="param-display">1.0</span>
+                <button class="param-btn" onclick="changeLambda(0.2)">+ 0.2</button>
+            </div>
+        </div>
+        <div class="control-right">
+            <div class="formula-title">当前分布公式</div>
+            <div class="formula-box" id="formulaDisplay"></div>
+        </div>
+    </div>
+
+    <div class="canvas-container"><div id="tooltip"></div><canvas id="distributionCanvas" width="800" height="400"></canvas></div>
+
+    <div class="relation-panel">
+        <h3 class="relation-title">📊 指数分布与常见统计分布的关系</h3>
+        <p class="relation-desc">1. 指数分布是伽马分布的特例（α=1）<br>2. 指数分布是卡方分布的特例（df=2）<br>3. 具有无记忆性，常用于等待时间模型<br>4. 泊松过程的时间间隔服从指数分布</p>
+        <div class="link-group">
+            <a href="normal.html">正态分布</a><a href="chi.html">卡方分布</a><a href="gamma.html">伽马分布</a><a href="poisson.html">泊松分布</a>   
+        </div>
+    </div>
+
+    <script>
+        // 画布和上下文
+        const canvas = document.getElementById('distributionCanvas');
+        const ctx = canvas.getContext('2d');
+        const tooltip = document.getElementById('tooltip');
+        const formulaDisplay = document.getElementById('formulaDisplay');
+
+        // 状态变量
+        let lambda = 1.0;
+        let hoverPoint = null;
+
+        // 画布尺寸和边距
+        const CANVAS_WIDTH = 800;
+        const CANVAS_HEIGHT = 400;
+        const PADDING = 50;
+        const X_MIN = 0;
+        const X_MAX = 8;
+
+        // 获取当前显示的函数类型
+        function getFunctionType() {
+            return document.querySelector('input[name="funcType"]:checked').value;
+        }
+
+        // 指数分布概率密度函数 (PDF)
+        function exponentialPDF(x) {
+            return x < 0 ? 0 : lambda * Math.exp(-lambda * x);
+        }
+
+        // 指数分布累积分布函数 (CDF)
+        function exponentialCDF(x) {
+            return x < 0 ? 0 : 1 - Math.exp(-lambda * x);
+        }
+
+        // 获取当前函数值
+        function getYValue(x) {
+            return getFunctionType() === 'pdf' ? exponentialPDF(x) : exponentialCDF(x);
+        }
+
+        // 更新公式显示
+        function updateFormula() {
+            const lambdaStr = lambda.toFixed(1);
+            if (getFunctionType() === 'pdf') {
+                formulaDisplay.innerHTML = `\\( f(x) = ${lambdaStr} e^{-${lambdaStr}x} \\quad (x \\geq 0) \\)`;
+            } else {
+                formulaDisplay.innerHTML = `\\( F(x) = 1 - e^{-${lambdaStr}x} \\quad (x \\geq 0) \\)`;
+            }
+            
+            // 触发MathJax渲染
+            if (window.MathJax) {
+                MathJax.typesetPromise([formulaDisplay]);
+            }
+        }
+
+        // 调整λ参数
+        function changeLambda(delta) {
+            const newLambda = lambda + delta;
+            // 限制λ在合理范围内
+            if (newLambda > 0.1 && newLambda <= 5.0) {
+                lambda = newLambda;
+                document.getElementById('lambdaValue').textContent = lambda.toFixed(1);
+                redrawAll();
+            }
+        }
+
+        // 坐标映射函数
+        function mapXToCanvas(x) {
+            return PADDING + (x - X_MIN) / (X_MAX - X_MIN) * (CANVAS_WIDTH - 2 * PADDING);
+        }
+
+        function mapYToCanvas(y, maxY) {
+            const canvasY = CANVAS_HEIGHT - PADDING - (y / maxY) * (CANVAS_HEIGHT - 2 * PADDING);
+            return Math.max(PADDING, Math.min(CANVAS_HEIGHT - PADDING, canvasY));
+        }
+
+        // 绘制坐标轴和网格
+        function drawAxesAndGrid(maxY) {
+            ctx.clearRect(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT);
+            
+            // 绘制网格线
+            ctx.strokeStyle = '#cbd5e0';
+            ctx.lineWidth = 1;
+            
+            // 水平网格线
+            for (let y = PADDING; y <= CANVAS_HEIGHT - PADDING; y += 40) {
+                ctx.beginPath();
+                ctx.moveTo(PADDING, y);
+                ctx.lineTo(CANVAS_WIDTH - PADDING, y);
+                ctx.stroke();
+            }
+            
+            // 垂直网格线
+            for (let x = PADDING; x <= CANVAS_WIDTH - PADDING; x += 40) {
+                ctx.beginPath();
+                ctx.moveTo(x, PADDING);
+                ctx.lineTo(x, CANVAS_HEIGHT - PADDING);
+                ctx.stroke();
+            }
+            
+            // 绘制坐标轴
+            ctx.strokeStyle = '#2d3748';
+            ctx.lineWidth = 2;
+            
+            // X轴
+            ctx.beginPath();
+            ctx.moveTo(PADDING, CANVAS_HEIGHT - PADDING);
+            ctx.lineTo(CANVAS_WIDTH - PADDING, CANVAS_HEIGHT - PADDING);
+            ctx.stroke();
+            
+            // Y轴
+            ctx.beginPath();
+            ctx.moveTo(PADDING, PADDING);
+            ctx.lineTo(PADDING, CANVAS_HEIGHT - PADDING);
+            ctx.stroke();
+            
+            // 绘制刻度标签
+            ctx.fillStyle = '#333';
+            ctx.font = '12px Arial';
+            ctx.textAlign = 'center';
+            
+            // X轴刻度
+            for (let x = 0; x <= 8; x += 1) {
+                ctx.fillText(x, mapXToCanvas(x), CANVAS_HEIGHT - PADDING + 15);
+            }
+            
+            // Y轴刻度
+            ctx.textAlign = 'right';
+            const yStep = getFunctionType() === 'pdf' ? lambda * 0.2 : 0.2;
+            const yMax = getFunctionType() === 'pdf' ? lambda * 1.0 : 1.0;
+            for (let y = 0; y <= yMax; y += yStep) {
+                ctx.fillText(y.toFixed(1), PADDING - 8, mapYToCanvas(y, maxY) + 4);
+            }
+        }
+
+        // 绘制分布曲线
+        function drawDistributionCurve(maxY) {
+            ctx.strokeStyle = '#4299e1';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            
+            for (let px = 0; px < CANVAS_WIDTH; px++) {
+                const x = X_MIN + (px / CANVAS_WIDTH) * (X_MAX - X_MIN);
+                const y = getYValue(x);
+                const canvasX = mapXToCanvas(x);
+                const canvasY = mapYToCanvas(y, maxY);
+                
+                if (px === 0) {
+                    ctx.moveTo(canvasX, canvasY);
+                } else {
+                    ctx.lineTo(canvasX, canvasY);
+                }
+            }
+            ctx.stroke();
+        }
+
+        // 绘制悬停点
+        function drawHoverPoint(maxY) {
+            if (hoverPoint) {
+                const { x } = hoverPoint;
+                const y = getYValue(x);
+                
+                ctx.fillStyle = '#ff5050';
+                ctx.beginPath();
+                ctx.arc(mapXToCanvas(x), mapYToCanvas(y, maxY), 5, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        // 重绘所有内容
+        function redrawAll() {
+            updateFormula();
+            
+            // 确定Y轴范围
+            const isPDF = getFunctionType() === 'pdf';
+            const maxY = isPDF ? lambda * 1.1 : 1.0;
+            
+            drawAxesAndGrid(maxY);
+            drawDistributionCurve(maxY);
+            drawHoverPoint(maxY);
+        }
+
+        // 鼠标移动事件处理
+        canvas.addEventListener('mousemove', (e) => {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            if (mouseX >= PADDING && mouseX <= CANVAS_WIDTH - PADDING &&
+                mouseY >= PADDING && mouseY <= CANVAS_HEIGHT - PADDING) {
+                
+                const x = X_MIN + (mouseX - PADDING) / (CANVAS_WIDTH - 2 * PADDING) * (X_MAX - X_MIN);
+                const y = getYValue(x);
+                
+                hoverPoint = { x, y };
+                
+                tooltip.style.display = 'block';
+                tooltip.style.left = (mouseX + 12) + 'px';
+                tooltip.style.top = (mouseY - 24) + 'px';
+                tooltip.textContent = `X = ${x.toFixed(2)}, Y = ${y.toFixed(4)}`;
+            } else {
+                hoverPoint = null;
+                tooltip.style.display = 'none';
+            }
+            
+            redrawAll();
+        });
+
+        // 鼠标离开画布事件
+        canvas.addEventListener('mouseleave', () => {
+            hoverPoint = null;
+            tooltip.style.display = 'none';
+            redrawAll();
+        });
+
+        // 页面加载完成后初始化
+        window.addEventListener('load', redrawAll);
+    </script>
+</body>
+</html>

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>韦伯分布交互可视化</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+    <h1 class="title">韦伯分布（Weibull）</h1>
+
+    <div class="toggle-panel">
+        <span class="toggle-label">显示类型：</span>
+        <div class="radio-group">
+            <label class="radio-item"><input type="radio" name="funcType" value="pdf" checked onchange="redrawAll()"> 概率密度函数 (PDF)</label>
+            <label class="radio-item"><input type="radio" name="funcType" value="cdf" onchange="redrawAll()"> 分布函数 (CDF)</label>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <div class="control-left">
+            <div class="control-group">
+                <span class="control-label">形状参数 k：</span>
+                <button class="param-btn" onclick="changeK(-0.5)">- 0.5</button>
+                <span id="kValue" class="param-display">2.0</span>
+                <button class="param-btn" onclick="changeK(0.5)">+ 0.5</button>
+            </div>
+            <div class="control-group">
+                <span class="control-label">尺度参数 λ：</span>
+                <button class="param-btn" onclick="changeLambda(-0.5)">- 0.5</button>
+                <span id="lambdaValue" class="param-display">1.0</span>
+                <button class="param-btn" onclick="changeLambda(0.5)">+ 0.5</button>
+            </div>
+        </div>
+        <div class="control-right">
+            <div class="formula-title">当前分布公式</div>
+            <div class="formula-box" id="formulaDisplay"></div>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <div id="tooltip"></div>
+        <canvas id="distributionCanvas" width="800" height="400"></canvas>
+    </div>
+
+    <div class="relation-panel">
+        <h3 class="relation-title">📊 韦伯分布与常见统计分布的关系</h3>
+        <p class="relation-desc">
+            1. <strong>可靠性工程核心分布</strong>：描述产品寿命与失效模式<br>
+            &nbsp;&nbsp;&nbsp;• k<1：早期失效（磨合期）<br>
+            &nbsp;&nbsp;&nbsp;• k=1：随机失效（退化为指数分布）<br>
+            &nbsp;&nbsp;&nbsp;• k>1：耗损失效（老化阶段）<br>
+            2. k=2 时 → 瑞利分布（描述风速、噪声等）<br>
+            3. k≈3.3 时 → 近似正态分布<br>
+            4. 特征寿命：x=λ 时，累计失效概率为 63.2%
+        </p>
+        <div class="link-group">
+            <a href="exponential.html">指数分布</a><a href="normal.html">正态分布</a>
+        </div>
+    </div>
+
+    <script>
+        const canvas=document.getElementById('distributionCanvas'),ctx=canvas.getContext('2d'),tooltip=document.getElementById('tooltip'),formulaDisplay=document.getElementById('formulaDisplay');
+        let k=2.0,lambda=1.0,hoverPoint=null; 
+        const w=800,h=400,pad=50,xMin=0,xMax=15;
+        function getType(){return document.querySelector('input[name="funcType"]:checked').value;}
+        
+        // ✅ 韦伯分布PDF：f(x) = (k/λ)(x/λ)^(k-1)e^(-(x/λ)^k)，x≥0
+        function weibullPDF(x) {
+            if(x<=0)return 0;
+            const ratio=x/lambda;
+            return (k/lambda)*Math.pow(ratio, k-1)*Math.exp(-Math.pow(ratio, k));
+        }
+        
+        // ✅ 韦伯分布CDF：F(x) = 1 - e^(-(x/λ)^k)，x≥0
+        function weibullCDF(x) {
+            if(x<=0)return 0;
+            return 1 - Math.exp(-Math.pow(x/lambda, k));
+        }
+        
+        function getY(x){return getType()==='pdf'?weibullPDF(x):weibullCDF(x);}
+        
+        function updateFormula(){
+            const kk=k.toFixed(1),lam=lambda.toFixed(1);
+            if(getType()==='pdf'){
+                formulaDisplay.innerHTML=`\\( f(x) = \\dfrac{${kk}}{${lam}} \\left(\\dfrac{x}{${lam}}\\right)^{${kk}-1} e^{-\\left(\\dfrac{x}{${lam}}\\right)^{${kk}}} \\quad (x\\geq0) \\)`;
+            }else{
+                formulaDisplay.innerHTML=`\\( F(x) = 1 - e^{-\\left(\\dfrac{x}{${lam}}\\right)^{${kk}}} \\quad (x\\geq0) \\)`;
+            }
+            if(window.MathJax) MathJax.typesetPromise([formulaDisplay]);
+        }
+        
+        function changeK(d){const nk=k+d;if(nk>=0.5&&nk<=5.0){k=nk;document.getElementById('kValue').textContent=k.toFixed(1);redrawAll();}}
+        function changeLambda(d){const nl=lambda+d;if(nl>=0.5&&nl<=5.0){lambda=nl;document.getElementById('lambdaValue').textContent=lambda.toFixed(1);redrawAll();}}
+        
+        function mapX(x){return pad + (x-xMin)/(xMax-xMin)*(w-2*pad);}
+        function mapY(y,maxY){
+            const val = h-pad - (y/maxY)*(h-2*pad);
+            return Math.max(pad, Math.min(h-pad, val));
+        }
+
+        // ✅ 自适应Y轴刻度：区分PDF/CDF
+        function drawAxes(maxYVal, isPdf){
+            ctx.clearRect(0,0,w,h);
+            ctx.strokeStyle='#cbd5e0';ctx.lineWidth=1;
+            // 横向网格与刻度
+            let yTicks;
+            if(isPdf){
+                // PDF：按最大值均分5档
+                yTicks = [0, maxYVal*0.25, maxYVal*0.5, maxYVal*0.75, maxYVal];
+            }else{
+                // CDF：固定0~1清晰刻度
+                yTicks = [0, 0.2, 0.4, 0.6, 0.8, 1.0];
+            }
+            for(let yTick of yTicks){
+                let y = mapY(yTick, isPdf ? maxYVal : 1.0);
+                ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();
+            }
+            // 纵向网格
+            for(let x=pad;x<=w-pad;x+=40){
+                ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();
+            }
+            // 坐标轴
+            ctx.strokeStyle='#2d3748';ctx.lineWidth=2;
+            ctx.beginPath();ctx.moveTo(pad,h-pad);ctx.lineTo(w-pad,h-pad);ctx.stroke();
+            ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,h-pad);ctx.stroke();
+
+            ctx.fillStyle='#333';ctx.font='12px Arial';ctx.textAlign='center';
+            // X轴刻度
+            for(let x=0;x<=15;x+=2){
+                ctx.fillText(x,mapX(x),h-pad+15);
+            }
+            // Y轴刻度文字
+            ctx.textAlign='right';
+            for(let yTick of yTicks){
+                let y = mapY(yTick, isPdf ? maxYVal : 1.0);
+                ctx.fillText(yTick.toFixed(3), pad-6, y+4);
+            }
+        }
+
+        function redrawAll(){
+            const isPdf = getType() === "pdf";
+            let maxYVal;
+            
+            if(isPdf){
+                // 计算PDF最大值
+                if(k>1){
+                    // k>1时，众数在 λ*((k-1)/k)^(1/k)
+                    const mode = lambda * Math.pow((k-1)/k, 1/k);
+                    maxYVal = weibullPDF(mode) * 1.25;
+                }else if(k===1){
+                    // k=1时，最大值在x=0处为1/λ
+                    maxYVal = (1/lambda) * 1.25;
+                }else{
+                    // k<1时，x→0时PDF→∞，限制最大值为5
+                    maxYVal = Math.min(weibullPDF(0.01) * 1.1, 5);
+                }
+            }else{
+                // CDF固定0~1
+                maxYVal = 1.0;
+            }
+
+            updateFormula();
+            drawAxes(maxYVal, isPdf);
+
+            // 画连续曲线
+            ctx.strokeStyle='#4299e1';ctx.lineWidth=3;ctx.beginPath();
+            // 从x=0.01开始，避免k<1时x=0处的无穷大
+            for(let px=0;px<w;px++){
+                const x = xMin + px/w*(xMax-xMin) + 0.01;
+                const y = getY(x);
+                const cx = mapX(x);
+                const cy = mapY(y, isPdf ? maxYVal : 1.0);
+                px===0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+            }
+            ctx.stroke();
+
+            // 悬浮红点
+            if(hoverPoint){
+                const {x} = hoverPoint;
+                const y = getY(x);
+                const cx = mapX(x);
+                const cy = mapY(y, isPdf ? maxYVal : 1.0);
+                ctx.fillStyle="#ff5050";
+                ctx.beginPath();ctx.arc(cx,cy,5,0,Math.PI*2);ctx.fill();
+            }
+        }
+
+        canvas.addEventListener('mousemove',e=>{
+            const rect = canvas.getBoundingClientRect();
+            const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+            if(mx>=pad&&mx<=w-pad&&my>=pad&&my<=h-pad){
+                const x = xMin + (mx-pad)/(w-2*pad)*(xMax-xMin);
+                const y = getY(x);
+                hoverPoint={x,y};
+                tooltip.style.display="block";
+                tooltip.style.left=(mx+12)+"px";
+                tooltip.style.top=(my-24)+"px";
+                tooltip.textContent=`X=${x.toFixed(2)}  Y=${y.toFixed(4)}`;
+            }else{hoverPoint=null;tooltip.style.display="none";}
+            redrawAll();
+        });
+        
+        canvas.addEventListener('mouseleave',()=>{hoverPoint=null;tooltip.style.display="none";redrawAll();});
+        window.addEventListener('load',redrawAll);
+    </script>
+</body>
+</html>

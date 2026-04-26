@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>超几何分布交互可视化</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+    <h1 class="title">超几何分布（Hypergeometric）</h1>
+
+    <div class="toggle-panel">
+        <span class="toggle-label">显示类型：</span>
+        <div class="radio-group">
+            <label class="radio-item"><input type="radio" name="funcType" value="pmf" checked onchange="redrawAll()"> 概率质量函数 (PMF)</label>
+            <label class="radio-item"><input type="radio" name="funcType" value="cdf" onchange="redrawAll()"> 分布函数 (CDF)</label>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <div class="control-left">
+            <div class="control-group">
+                <span class="control-label">总体大小 N：</span>
+                <button class="param-btn" onclick="changeN(-5)">- 5</button>
+                <span id="nValue" class="param-display">50</span>
+                <button class="param-btn" onclick="changeN(5)">+ 5</button>
+            </div>
+            <div class="control-group">
+                <span class="control-label">总体成功数 K：</span>
+                <button class="param-btn" onclick="changeK(-5)">- 5</button>
+                <span id="kValue" class="param-display">20</span>
+                <button class="param-btn" onclick="changeK(5)">+ 5</button>
+            </div>
+            <div class="control-group">
+                <span class="control-label">抽样数 n：</span>
+                <button class="param-btn" onclick="changeSample(-2)">- 2</button>
+                <span id="sampleValue" class="param-display">10</span>
+                <button class="param-btn" onclick="changeSample(2)">+ 2</button>
+            </div>
+        </div>
+        <div class="control-right">
+            <div class="formula-title">当前分布公式</div>
+            <div class="formula-box" id="formulaDisplay"></div>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <div id="tooltip"></div>
+        <canvas id="distributionCanvas" width="800" height="400"></canvas>
+    </div>
+
+    <div class="relation-panel">
+        <h3 class="relation-title">📊 超几何分布与常见统计分布的关系</h3>
+        <p class="relation-desc">
+            1. <strong>不放回抽样的成功次数</strong>（二项分布是放回抽样）<br>
+            2. 经典例子：从52张牌中抽5张，抽到3张红桃的概率<br>
+            3. 当总体N→∞时，超几何分布→二项分布<br>
+            4. 应用于质量检验、抽样调查、生物种群估计
+        </p>
+        <div class="link-group">
+            <a href="binomial.html">二项分布</a>
+        </div>
+    </div>
+
+    <script>
+        const canvas=document.getElementById('distributionCanvas'),ctx=canvas.getContext('2d'),tooltip=document.getElementById('tooltip'),formulaDisplay=document.getElementById('formulaDisplay');
+        let N=50,K=20,n=10,hoverPoint=null; 
+        const w=800,h=400,pad=50,xMin=-0.5;
+        function getType(){return document.querySelector('input[name="funcType"]:checked').value;}
+        
+        // ✅ 高精度对数伽马函数
+        function logGamma(z) {
+            const g=7,c=[0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+            if(z<0.5)return Math.log(Math.PI/Math.sin(Math.PI*z))-logGamma(1-z);
+            z--;let x=c[0];for(let i=1;i<g+2;i++)x+=c[i]/(z+i);
+            const t=z+g+0.5;
+            return 0.5*Math.log(2*Math.PI)+(z+0.5)*Math.log(t)-t+Math.log(x);
+        }
+        
+        // ✅ 组合数 C(n,k) = n!/(k!(n-k)!)
+        function comb(nn, kk) {
+            if(kk<0||kk>nn)return 0;
+            if(kk===0||kk===nn)return 1;
+            return Math.exp(logGamma(nn+1)-logGamma(kk+1)-logGamma(nn-kk+1));
+        }
+        
+        // ✅ 超几何分布PMF：P(X=k) = C(K,k)C(N-K,n-k)/C(N,n)
+        function hypergeomPMF(k) {
+            const minK=Math.max(0,n+K-N);
+            const maxK=Math.min(K,n);
+            if(k<minK||k>maxK||!Number.isInteger(k))return 0;
+            return comb(K,k)*comb(N-K,n-k)/comb(N,n);
+        }
+        
+        // ✅ 超几何分布CDF：P(X≤k) = Σ_{i=minK}^floor(k) PMF(i)
+        function hypergeomCDF(k) {
+            const minK=Math.max(0,n+K-N);
+            const maxK=Math.min(K,n);
+            if(k<minK)return 0;
+            if(k>=maxK)return 1;
+            let sum=0;
+            for(let i=minK;i<=Math.floor(k);i++)sum+=hypergeomPMF(i);
+            return Math.min(1,sum);
+        }
+        
+        function getY(k){return getType()==='pmf'?hypergeomPMF(k):hypergeomCDF(k);}
+        
+        function updateFormula(){
+            if(getType()==='pmf'){
+                formulaDisplay.innerHTML=`\\( P(X=k) = \\dfrac{\\binom{${K}}{k}\\binom{${N}-${K}}{${n}-k}}{\\binom{${N}}{${n}}} \\)`;
+            }else{
+                formulaDisplay.innerHTML=`\\( P(X\\leq k) = \\sum_{i=0}^{\\lfloor k \\rfloor} \\dfrac{\\binom{${K}}{i}\\binom{${N}-${K}}{${n}-i}}{\\binom{${N}}{${n}}} \\)`;
+            }
+            if(window.MathJax) MathJax.typesetPromise([formulaDisplay]);
+        }
+        
+        function changeN(d){const nn=N+d;if(nn>=10&&nn<=200&&nn>K&&nn>n){N=nn;document.getElementById('nValue').textContent=N;redrawAll();}}
+        function changeK(d){const kk=K+d;if(kk>=5&&kk<=N-5&&kk>=n){K=kk;document.getElementById('kValue').textContent=K;redrawAll();}}
+        function changeSample(d){const ss=n+d;if(ss>=2&&ss<=N-5&&ss<=K){n=ss;document.getElementById('sampleValue').textContent=n;redrawAll();}}
+        
+        function mapX(x, xMaxVal){return pad + (x-xMin)/(xMaxVal-xMin)*(w-2*pad);}
+        function mapY(y,maxY){
+            const val = h-pad - (y/maxY)*(h-2*pad);
+            return Math.max(pad, Math.min(h-pad, val));
+        }
+
+        // ✅ 自适应Y轴刻度
+        function drawAxes(xMaxVal, maxYVal, isPmf){
+            ctx.clearRect(0,0,w,h);
+            ctx.strokeStyle='#cbd5e0';ctx.lineWidth=1;
+            // 横向网格与刻度
+            let yTicks;
+            if(isPmf){
+                yTicks = [0, maxYVal*0.25, maxYVal*0.5, maxYVal*0.75, maxYVal];
+            }else{
+                yTicks = [0, 0.2, 0.4, 0.6, 0.8, 1.0];
+            }
+            for(let yTick of yTicks){
+                let y = mapY(yTick, isPmf ? maxYVal : 1.0);
+                ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();
+            }
+            // 纵向网格
+            for(let x=pad;x<=w-pad;x+=40){
+                ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();
+            }
+            // 坐标轴
+            ctx.strokeStyle='#2d3748';ctx.lineWidth=2;
+            ctx.beginPath();ctx.moveTo(pad,h-pad);ctx.lineTo(w-pad,h-pad);ctx.stroke();
+            ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,h-pad);ctx.stroke();
+
+            ctx.fillStyle='#333';ctx.font='12px Arial';ctx.textAlign='center';
+            // X轴刻度
+            const step=Math.max(1,Math.floor(xMaxVal/10));
+            for(let k=0;k<=xMaxVal;k+=step){
+                ctx.fillText(k,mapX(k,xMaxVal),h-pad+15);
+            }
+            // Y轴刻度文字
+            ctx.textAlign='right';
+            for(let yTick of yTicks){
+                let y = mapY(yTick, isPmf ? maxYVal : 1.0);
+                ctx.fillText(yTick.toFixed(3), pad-6, y+4);
+            }
+        }
+
+        function redrawAll(){
+            const isPmf = getType() === "pmf";
+            const minK=Math.max(0,n+K-N);
+            const maxK=Math.min(K,n);
+            const xMaxVal=maxK+0.5;
+            
+            let maxYVal;
+            if(isPmf){
+                // 计算PMF最大值
+                let peak=0;
+                for(let k=minK;k<=maxK;k++)peak=Math.max(peak,hypergeomPMF(k));
+                maxYVal = peak * 1.25;
+            }else{
+                maxYVal = 1.0;
+            }
+
+            updateFormula();
+            drawAxes(xMaxVal, maxYVal, isPmf);
+
+            // 画柱状图
+            ctx.fillStyle='#4299e1';
+            const barWidth=Math.max(3,(w-2*pad)/(maxK-minK+2)-4);
+            for(let k=minK;k<=maxK;k++){
+                let yVal = getY(k);
+                let cx = mapX(k, xMaxVal);
+                let cy = mapY(yVal, isPmf ? maxYVal : 1.0);
+                ctx.fillRect(cx-barWidth/2, cy, barWidth, (h-pad)-cy);
+            }
+
+            // 悬浮红点
+            if(hoverPoint){
+                const {k} = hoverPoint;
+                if(k>=minK&&k<=maxK){
+                    let yVal = getY(k);
+                    let cx = mapX(k, xMaxVal);
+                    let cy = mapY(yVal, isPmf ? maxYVal : 1.0);
+                    ctx.fillStyle="#ff5050";
+                    ctx.beginPath();ctx.arc(cx,cy,6,0,Math.PI*2);ctx.fill();
+                }
+            }
+        }
+
+        canvas.addEventListener('mousemove',e=>{
+            const rect = canvas.getBoundingClientRect();
+            const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+            if(mx>=pad&&mx<=w-pad&&my>=pad&&my<=h-pad){
+                const minK=Math.max(0,n+K-N);
+                const maxK=Math.min(K,n);
+                const xMaxVal=maxK+0.5;
+                const x = xMin + (mx-pad)/(w-2*pad)*(xMaxVal-xMin);
+                const k = Math.round(x);
+                if(k>=minK&&k<=maxK){
+                    hoverPoint={k};
+                    tooltip.style.display="block";
+                    tooltip.style.left=(mx+12)+"px";
+                    tooltip.style.top=(my-24)+"px";
+                    tooltip.textContent=`k=${k}  P=${getY(k).toFixed(4)}`;
+                }else{hoverPoint=null;tooltip.style.display="none";}
+            }else{hoverPoint=null;tooltip.style.display="none";}
+            redrawAll();
+        });
+        
+        canvas.addEventListener('mouseleave',()=>{hoverPoint=null;tooltip.style.display="none";redrawAll();});
+        window.addEventListener('load',redrawAll);
+    </script>
+</body>
+</html>

@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>负二项分布交互可视化</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+    <h1 class="title">负二项分布（Negative Binomial）</h1>
+
+    <div class="toggle-panel">
+        <span class="toggle-label">显示类型：</span>
+        <div class="radio-group">
+            <label class="radio-item"><input type="radio" name="funcType" value="pmf" checked onchange="redrawAll()"> 概率质量函数 (PMF)</label>
+            <label class="radio-item"><input type="radio" name="funcType" value="cdf" onchange="redrawAll()"> 分布函数 (CDF)</label>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <div class="control-left">
+            <div class="control-group">
+                <span class="control-label">目标成功次数 r：</span>
+                <button class="param-btn" onclick="changeR(-1)">- 1</button>
+                <span id="rValue" class="param-display">2</span>
+                <button class="param-btn" onclick="changeR(1)">+ 1</button>
+            </div>
+            <div class="control-group">
+                <span class="control-label">单次成功概率 p：</span>
+                <button class="param-btn" onclick="changeP(-0.1)">- 0.1</button>
+                <span id="pValue" class="param-display">0.5</span>
+                <button class="param-btn" onclick="changeP(0.1)">+ 0.1</button>
+            </div>
+        </div>
+        <div class="control-right">
+            <div class="formula-title">当前分布公式</div>
+            <div class="formula-box" id="formulaDisplay"></div>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <div id="tooltip"></div>
+        <canvas id="distributionCanvas" width="800" height="400"></canvas>
+    </div>
+
+    <div class="relation-panel">
+        <h3 class="relation-title">📊 负二项分布与常见统计分布的关系</h3>
+        <p class="relation-desc">
+            1. 经典定义：获得r次成功所需的试验次数<br>
+            2. 几何分布的推广：r=1 退化为几何分布<br>
+            3. 二项分布对偶：固定成功数，看总试验次数<br>
+            4. r 越大越近似正态分布
+        </p>
+        <div class="link-group">
+            <a href="geometric.html">几何分布</a><a href="binomial.html">二项分布</a><a href="poisson.html">泊松分布</a>
+            <a href="normal.html">正态分布</a><a href="exponential.html">指数分布</a>
+        </div>
+    </div>
+
+    <script>
+        const canvas=document.getElementById('distributionCanvas'),ctx=canvas.getContext('2d'),tooltip=document.getElementById('tooltip'),formulaDisplay=document.getElementById('formulaDisplay');
+        let r=2,p=0.5,hoverPoint=null; 
+        const w=800,h=400,pad=50,xMin=0.5;
+        function getType(){return document.querySelector('input[name="funcType"]:checked').value;}
+        
+        function logGamma(z) {
+            const g=7,c=[0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+            if(z<0.5)return Math.log(Math.PI/Math.sin(Math.PI*z))-logGamma(1-z);
+            z--;let x=c[0];for(let i=1;i<g+2;i++)x+=c[i]/(z+i);
+            const t=z+g+0.5;
+            return 0.5*Math.log(2*Math.PI)+(z+0.5)*Math.log(t)-t+Math.log(x);
+        }
+        function comb(nn, kk) {
+            if(kk<0||kk>nn)return 0;
+            if(kk===0||kk===nn)return 1;
+            return Math.exp(logGamma(nn+1)-logGamma(kk+1)-logGamma(nn-kk+1));
+        }
+
+        function nbinomPMF(k) {
+            if(k<r||!Number.isInteger(k))return 0;
+            const c=comb(k-1, r-1);
+            return c*Math.pow(p, r)*Math.pow(1-p, k-r);
+        }
+        function nbinomCDF(k) {
+            if(k<r)return 0;
+            let sum=0;
+            const maxK=Math.ceil(r/p + 6*Math.sqrt(r*(1-p))/p);
+            for(let i=r;i<=Math.min(Math.floor(k),maxK);i++) sum+=nbinomPMF(i);
+            return Math.min(1,sum);
+        }
+        function getY(k){return getType()==='pmf'?nbinomPMF(k):nbinomCDF(k);}
+
+        function updateFormula(){
+            const rr=r,pp=p.toFixed(1);
+            if(getType()==='pmf'){
+                formulaDisplay.innerHTML=`\\( P(X=k) = \\binom{k-1}{${rr}-1} ${pp}^{${rr}}(1-${pp})^{k-${rr}} \\)`;
+            }else{
+                formulaDisplay.innerHTML=`\\( P(X\\le k) = \\sum_{i=${rr}}^{k}\\binom{i-1}{r-1}p^r(1-p)^{i-r} \\)`;
+            }
+            if(window.MathJax) MathJax.typesetPromise([formulaDisplay]);
+        }
+        function changeR(d){const nr=r+d;if(nr>=1&&nr<=20){r=nr;document.getElementById('rValue').textContent=r;redrawAll();}}
+        function changeP(d){const np=+p+d;if(np>=0.1&&np<=0.9){p=np;document.getElementById('pValue').textContent=p.toFixed(1);redrawAll();}}
+
+        function mapX(x,xMaxVal){
+            return pad + (x-xMin)/(xMaxVal-xMin)*(w-2*pad);
+        }
+        function mapY(y,maxY){
+            const val = h-pad - (y/maxY)*(h-2*pad);
+            return Math.max(pad, Math.min(h-pad, val));
+        }
+
+        // 关键修复：Y轴刻度动态区分 PMF / CDF
+        function drawAxes(xMaxVal, maxYVal, isPmf){
+            ctx.clearRect(0,0,w,h);
+            ctx.strokeStyle='#cbd5e0';ctx.lineWidth=1;
+            // 横向网格
+            let yTicks;
+            if(isPmf){
+                // PMF：按最大值均分5档
+                yTicks = [0, maxYVal*0.25, maxYVal*0.5, maxYVal*0.75, maxYVal];
+            }else{
+                // CDF：固定 0~1 清晰刻度
+                yTicks = [0, 0.2, 0.4, 0.6, 0.8, 1.0];
+            }
+            for(let yTick of yTicks){
+                let y = mapY(yTick, isPmf ? maxYVal : 1.0);
+                ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();
+            }
+            // 纵向网格
+            for(let x=pad;x<=w-pad;x+=40){
+                ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();
+            }
+            // 坐标轴
+            ctx.strokeStyle='#2d3748';ctx.lineWidth=2;
+            ctx.beginPath();ctx.moveTo(pad,h-pad);ctx.lineTo(w-pad,h-pad);ctx.stroke();
+            ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,h-pad);ctx.stroke();
+
+            ctx.fillStyle='#333';ctx.font='12px Arial';ctx.textAlign='center';
+            const step=Math.max(1,Math.floor(xMaxVal/10));
+            for(let k=r;k<=xMaxVal;k+=step){
+                ctx.fillText(k,mapX(k,xMaxVal),h-pad+15);
+            }
+            // Y轴刻度文字
+            ctx.textAlign='right';
+            for(let yTick of yTicks){
+                let y = mapY(yTick, isPmf ? maxYVal : 1.0);
+                ctx.fillText(yTick.toFixed(3), pad-6, y+4);
+            }
+        }
+
+        function redrawAll(){
+            const isPmf = getType() === "pmf";
+            const mean = r/p;
+            const std  = Math.sqrt(r*(1-p))/p;
+            const xMaxVal = Math.max(Math.ceil(mean+6*std), 15);
+
+            // 计算真实最大概率，作为Y轴上限
+            let peak = 0;
+            const checkEnd = Math.min(xMaxVal, Math.ceil(mean+8*std));
+            for(let k=r;k<=checkEnd;k++){
+                peak = Math.max(peak, nbinomPMF(k));
+            }
+            const maxYVal = peak * 1.25;
+
+            updateFormula();
+            drawAxes(xMaxVal, maxYVal, isPmf);
+
+            // 画柱状图
+            ctx.fillStyle='#4299e1';
+            const barW = Math.max(3, (w-2*pad)/(xMaxVal - r + 2) - 4);
+            for(let k=r;k<=xMaxVal;k++){
+                let yVal = getY(k);
+                let cx = mapX(k, xMaxVal);
+                let cy = mapY(yVal, isPmf ? maxYVal : 1.0);
+                ctx.fillRect(cx-barW/2, cy, barW, (h-pad)-cy);
+            }
+            // 悬浮红点
+            if(hoverPoint){
+                const {k} = hoverPoint;
+                if(k>=r && k<=xMaxVal){
+                    let yVal = getY(k);
+                    let cx = mapX(k, xMaxVal);
+                    let cy = mapY(yVal, isPmf ? maxYVal : 1.0);
+                    ctx.fillStyle="#ff5050";
+                    ctx.beginPath();ctx.arc(cx,cy,6,0,Math.PI*2);ctx.fill();
+                }
+            }
+        }
+
+        canvas.addEventListener('mousemove',e=>{
+            const rect = canvas.getBoundingClientRect();
+            const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+            const isPmf = getType() === "pmf";
+            const mean = r/p;
+            const std  = Math.sqrt(r*(1-p))/p;
+            const xMaxVal = Math.max(Math.ceil(mean+6*std),15);
+
+            if(mx>=pad&&mx<=w-pad&&my>=pad&&my<=h-pad){
+                let x = xMin + (mx-pad)/(w-2*pad)*(xMaxVal-xMin);
+                let k = Math.round(x);
+                if(k>=r&&k<=xMaxVal){
+                    hoverPoint={k};
+                    tooltip.style.display="block";
+                    tooltip.style.left=(mx+12)+"px";
+                    tooltip.style.top=(my-24)+"px";
+                    tooltip.textContent=`k=${k}  P=${getY(k).toFixed(4)}`;
+                }else{hoverPoint=null;tooltip.style.display="none";}
+            }else{hoverPoint=null;tooltip.style.display="none";}
+            redrawAll();
+        });
+        canvas.addEventListener('mouseleave',()=>{hoverPoint=null;tooltip.style.display='none';redrawAll();});
+        window.addEventListener('load',redrawAll);
+    </script>
+</body>
+</html>

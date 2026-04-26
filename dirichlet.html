@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Dirichlet分布交互可视化</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <style>
+        .legend {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255,255,255,0.95);
+            padding: 10px 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            font-size: 13px;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            margin: 5px 0;
+        }
+        .legend-color {
+            width: 24px;
+            height: 3px;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1 class="title">Dirichlet分布</h1>
+
+    <div class="control-panel">
+        <div class="control-left">
+            <div class="control-group">
+                <span class="control-label">α₁：</span>
+                <button class="param-btn" onclick="changeA1(-0.5)">- 0.5</button>
+                <span id="a1Value" class="param-display">2.0</span>
+                <button class="param-btn" onclick="changeA1(0.5)">+ 0.5</button>
+            </div>
+            <div class="control-group">
+                <span class="control-label">α₂：</span>
+                <button class="param-btn" onclick="changeA2(-0.5)">- 0.5</button>
+                <span id="a2Value" class="param-display">3.0</span>
+                <button class="param-btn" onclick="changeA2(0.5)">+ 0.5</button>
+            </div>
+            <div class="control-group">
+                <span class="control-label">α₃：</span>
+                <button class="param-btn" onclick="changeA3(-0.5)">- 0.5</button>
+                <span id="a3Value" class="param-display">4.0</span>
+                <button class="param-btn" onclick="changeA3(0.5)">+ 0.5</button>
+            </div>
+        </div>
+        <div class="control-right">
+            <div class="formula-title">当前分布公式</div>
+            <div class="formula-box" id="formulaDisplay"></div>
+        </div>
+    </div>
+
+    <div class="canvas-container">
+        <div id="tooltip"></div>
+        <canvas id="distributionCanvas" width="800" height="400"></canvas>
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-color" style="background: #4299e1;"></div>
+                <span>维度1 (α₁)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #48bb78;"></div>
+                <span>维度2 (α₂)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-color" style="background: #ed8936;"></div>
+                <span>维度3 (α₃)</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="relation-panel">
+        <h3 class="relation-title">📊 Dirichlet分布与常见统计分布的关系</h3>
+        <p class="relation-desc">
+            1. <strong>Beta分布的多类别推广</strong><br>
+            2. 经典例子：描述多个概率的联合分布（如"骰子每个面朝上的概率"）<br>
+            3. 是多项分布的共轭先验<br>
+            4. k=2时退化为Beta分布<br>
+            5. 应用于主题模型（LDA）、贝叶斯多分类、混合模型
+        </p>
+        <div class="link-group">
+            <a href="beta.html">Beta</a><a href="multinomial.html">多项</a><a href="bernoulli.html">伯努利</a>
+        </div>
+    </div>
+
+    <script>
+        const canvas=document.getElementById('distributionCanvas'),ctx=canvas.getContext('2d'),tooltip=document.getElementById('tooltip'),formulaDisplay=document.getElementById('formulaDisplay');
+        let a1=2.0,a2=3.0,a3=4.0,hoverPoint=null; 
+        const w=800,h=400,pad=50,xMin=0,xMax=1;
+        const colors = ['#4299e1', '#48bb78', '#ed8936'];
+        
+        // 高精度伽马函数
+        function gamma(z) {
+            const g=7,c=[0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+            if(z<0.5)return Math.PI/(Math.sin(Math.PI*z)*gamma(1-z));
+            z--;let x=c[0];for(let i=1;i<g+2;i++)x+=c[i]/(z+i);
+            const t=z+g+0.5;
+            return Math.sqrt(2*Math.PI)*Math.pow(t,z+0.5)*Math.exp(-t)*x;
+        }
+        
+        // Beta函数
+        function betaFn(a,b) {
+            return gamma(a)*gamma(b)/gamma(a+b);
+        }
+        
+        // Dirichlet分布边缘PDF
+        function dirichletPDF(x, dim) {
+            if(x<0||x>1)return 0;
+            
+            let a, b;
+            if(dim===0){
+                a = a1;
+                b = a2 + a3;
+            }else if(dim===1){
+                a = a2;
+                b = a1 + a3;
+            }else{
+                a = a3;
+                b = a1 + a2;
+            }
+            
+            return Math.pow(x, a-1) * Math.pow(1-x, b-1) / betaFn(a, b);
+        }
+        
+        function updateFormula(){
+            formulaDisplay.innerHTML=`\\( f(\\mathbf{x}) = \\dfrac{\\Gamma(\\alpha_1+\\alpha_2+\\alpha_3)}{\\Gamma(\\alpha_1)\\Gamma(\\alpha_2)\\Gamma(\\alpha_3)} x_1^{\\alpha_1-1}x_2^{\\alpha_2-1}x_3^{\\alpha_3-1} \\)`;
+            if(window.MathJax) MathJax.typesetPromise([formulaDisplay]);
+        }
+        
+        function changeA1(d){const na=a1+d;if(na>=0.5&&na<=10.0){a1=na;document.getElementById('a1Value').textContent=a1.toFixed(1);redrawAll();}}
+        function changeA2(d){const na=a2+d;if(na>=0.5&&na<=10.0){a2=na;document.getElementById('a2Value').textContent=a2.toFixed(1);redrawAll();}}
+        function changeA3(d){const na=a3+d;if(na>=0.5&&na<=10.0){a3=na;document.getElementById('a3Value').textContent=a3.toFixed(1);redrawAll();}}
+        
+        function mapX(x){return pad + (x-xMin)/(xMax-xMin)*(w-2*pad);}
+        function mapY(y,maxY){
+            const val = h-pad - (y/maxY)*(h-2*pad);
+            return Math.max(pad, Math.min(h-pad, val));
+        }
+
+        // 自适应Y轴刻度
+        function drawAxes(maxYVal){
+            ctx.clearRect(0,0,w,h);
+            ctx.strokeStyle='#cbd5e0';ctx.lineWidth=1;
+            // 横向网格与刻度
+            const yTicks = [0, maxYVal*0.25, maxYVal*0.5, maxYVal*0.75, maxYVal];
+            for(let yTick of yTicks){
+                let y = mapY(yTick, maxYVal);
+                ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();
+            }
+            // 纵向网格
+            for(let x=pad;x<=w-pad;x+=40){
+                ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();
+            }
+            // 坐标轴
+            ctx.strokeStyle='#2d3748';ctx.lineWidth=2;
+            ctx.beginPath();ctx.moveTo(pad,h-pad);ctx.lineTo(w-pad,h-pad);ctx.stroke();
+            ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,h-pad);ctx.stroke();
+
+            ctx.fillStyle='#333';ctx.font='12px Arial';ctx.textAlign='center';
+            // X轴刻度
+            for(let x=0;x<=1;x+=0.2){
+                ctx.fillText(x.toFixed(1),mapX(x),h-pad+15);
+            }
+            // Y轴刻度文字
+            ctx.textAlign='right';
+            for(let yTick of yTicks){
+                let y = mapY(yTick, maxYVal);
+                ctx.fillText(yTick.toFixed(3), pad-6, y+4);
+            }
+        }
+
+        function redrawAll(){
+            // 计算三个维度的最大PDF值
+            let maxYVal = 0;
+            for(let dim=0;dim<3;dim++){
+                for(let x=0;x<=1;x+=0.01){
+                    maxYVal = Math.max(maxYVal, dirichletPDF(x, dim));
+                }
+            }
+            maxYVal *= 1.25;
+
+            updateFormula();
+            drawAxes(maxYVal);
+
+            // 画三个维度的曲线
+            for(let dim=0;dim<3;dim++){
+                ctx.strokeStyle = colors[dim];
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                for(let px=0;px<w;px++){
+                    const x = xMin + px/w*(xMax-xMin);
+                    const y = dirichletPDF(x, dim);
+                    const cx = mapX(x);
+                    const cy = mapY(y, maxYVal);
+                    px===0 ? ctx.moveTo(cx, cy) : ctx.lineTo(cx, cy);
+                }
+                ctx.stroke();
+            }
+
+            // 悬浮红点（显示当前x值三个维度的PDF）
+            if(hoverPoint){
+                const {x} = hoverPoint;
+                for(let dim=0;dim<3;dim++){
+                    const y = dirichletPDF(x, dim);
+                    const cx = mapX(x);
+                    const cy = mapY(y, maxYVal);
+                    ctx.fillStyle = "#ff5050";
+                    ctx.beginPath();ctx.arc(cx,cy,5,0,Math.PI*2);ctx.fill();
+                }
+            }
+        }
+
+        canvas.addEventListener('mousemove',e=>{
+            const rect = canvas.getBoundingClientRect();
+            const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+            if(mx>=pad&&mx<=w-pad&&my>=pad&&my<=h-pad){
+                const x = xMin + (mx-pad)/(w-2*pad)*(xMax-xMin);
+                hoverPoint={x};
+                tooltip.style.display="block";
+                tooltip.style.left=(mx+12)+"px";
+                tooltip.style.top=(my-24)+"px";
+                tooltip.textContent=`X=${x.toFixed(2)}  维度1=${dirichletPDF(x,0).toFixed(4)}  维度2=${dirichletPDF(x,1).toFixed(4)}  维度3=${dirichletPDF(x,2).toFixed(4)}`;
+            }else{hoverPoint=null;tooltip.style.display="none";}
+            redrawAll();
+        });
+        
+        canvas.addEventListener('mouseleave',()=>{hoverPoint=null;tooltip.style.display="none";redrawAll();});
+        window.addEventListener('load',redrawAll);
+    </script>
+</body>
+</html>

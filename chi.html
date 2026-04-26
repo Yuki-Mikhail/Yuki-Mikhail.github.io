@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>卡方分布交互可视化</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+    <h1 class="title">卡方分布（χ²）</h1>
+
+    <div class="toggle-panel">
+        <span class="toggle-label">显示类型：</span>
+        <div class="radio-group">
+            <label class="radio-item"><input type="radio" name="funcType" value="pdf" checked onchange="redrawAll()"> 概率密度函数 (PDF)</label>
+            <label class="radio-item"><input type="radio" name="funcType" value="cdf" onchange="redrawAll()"> 分布函数 (CDF)</label>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <div class="control-left">
+            <div class="control-group">
+                <span class="control-label">自由度 df：</span>
+                <button class="param-btn" onclick="changeDf(-1)">- 1</button>
+                <span id="dfValue" class="param-display">2</span>
+                <button class="param-btn" onclick="changeDf(1)">+ 1</button>
+            </div>
+        </div>
+        <div class="control-right">
+            <div class="formula-title">当前分布公式</div>
+            <div class="formula-box" id="formulaDisplay"></div>
+        </div>
+    </div>
+
+    <div class="canvas-container"><div id="tooltip"></div><canvas id="distributionCanvas" width="800" height="400"></canvas></div>
+
+    <div class="relation-panel">
+        <h3 class="relation-title">📊 卡方分布与常见统计分布的关系</h3>
+        <p class="relation-desc">1. 独立标准正态平方和→卡方分布<br>2. 是t分布、F分布的构造基础<br>3. 自由度大时→近似正态分布<br>4. df=2时→等价于指数分布</p>
+        <div class="link-group">
+            <a href="normal.html">正态</a><a href="t.html">t分布</a><a href="f.html">F</a><a href="gamma.html">伽马</a><a href="lognormal.html">对数正态</a><a href="exponential.html">指数</a>
+        </div>
+    </div>
+
+    <script>
+        const canvas=document.getElementById('distributionCanvas'),ctx=canvas.getContext('2d'),tooltip=document.getElementById('tooltip'),formulaDisplay=document.getElementById('formulaDisplay');
+        let df=2,hoverPoint=null; const w=800,h=400,pad=50,xMin=0,xMax=15;
+        function getType(){return document.querySelector('input[name="funcType"]:checked').value;}
+        
+        // 高精度伽马函数
+        function gamma(z) {
+            const g=7,c=[0.99999999999980993,676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+            if(z<0.5)return Math.PI/(Math.sin(Math.PI*z)*gamma(1-z));
+            z-=1;let x=c[0];for(let i=1;i<g+2;i++)x+=c[i]/(z+i);
+            const t=z+g+0.5;
+            return Math.sqrt(2*Math.PI)*Math.pow(t,z+0.5)*Math.exp(-t)*x;
+        }
+        
+        // 卡方PDF：f(x) = x^(k/2-1)e^(-x/2)/(2^(k/2)Γ(k/2))
+        function chiPDF(x) {
+            if(x<=0)return 0;
+            const k=df;
+            return Math.pow(x,k/2-1)*Math.exp(-x/2)/(Math.pow(2,k/2)*gamma(k/2));
+        }
+        
+        // 卡方CDF
+        function integrate(a,b,step=0.005) {
+            let s=0;
+            for(let x=a;x<b;x+=step)s+=chiPDF(x)*step;
+            return s;
+        }
+        function chiCDF(x) {
+            if(x<=0)return 0;
+            return Math.min(1,integrate(0,x));
+        }
+        
+        function getY(x){return getType()==='pdf'?chiPDF(x):chiCDF(x);}
+        
+        function updateFormula(){const d=df;if(getType()==='pdf')formulaDisplay.innerHTML=`\\( f(x) = \\dfrac{x^{${d}/2-1} e^{-x/2}}{2^{${d}/2} \\Gamma(${d}/2)} \\)`;else formulaDisplay.innerHTML=`\\( F(x) = \\dfrac{\\gamma(${d}/2, x/2)}{\\Gamma(${d}/2)} \\)`;if(window.MathJax)MathJax.typesetPromise([formulaDisplay]);}
+        function changeDf(d){const nd=df+d;if(nd>=1&&nd<=15){df=nd;document.getElementById('dfValue').textContent=df;redrawAll();}}
+        function mapX(x){return pad+(x-xMin)/(xMax-xMin)*(w-2*pad);}
+        function mapY(y,maxY){const val=h-pad-(y/maxY)*(h-2*pad);return Math.max(pad,Math.min(h-pad,val));}
+        
+        function drawAxes(){
+            ctx.clearRect(0,0,w,h);
+            ctx.strokeStyle='#cbd5e0';ctx.lineWidth=1;
+            for(let y=pad;y<=h-pad;y+=40){ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();}
+            for(let x=pad;x<=w-pad;x+=40){ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();}
+            ctx.strokeStyle='#2d3748';ctx.lineWidth=2;
+            ctx.beginPath();ctx.moveTo(pad,h-pad);ctx.lineTo(w-pad,h-pad);ctx.stroke();
+            ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,h-pad);ctx.stroke();
+            ctx.fillStyle='#333';ctx.font='12px Arial';ctx.textAlign='center';
+            for(let x=0;x<=14;x+=2)ctx.fillText(x,mapX(x),h-pad+15);
+            ctx.textAlign='right';
+            for(let i=0;i<=1;i+=0.2)ctx.fillText(i.toFixed(1),pad-8,mapY(i,1)+4);
+        }
+        
+        function redrawAll(){
+            updateFormula();drawAxes();
+            const isPdf=getType()==='pdf';
+            // ✅ 卡方PDF最大值在x=df-2（df>2时）
+            const maxY=isPdf?(df>2?chiPDF(df-2):chiPDF(0.1))*1.1:1.0;
+            ctx.strokeStyle='#4299e1';ctx.lineWidth=3;ctx.beginPath();
+            for(let px=0;px<w;px++){
+                const x=xMin+px/w*(xMax-xMin),y=getY(x),cx=mapX(x),cy=mapY(y,maxY);
+                px===0?ctx.moveTo(cx,cy):ctx.lineTo(cx,cy);
+            }
+            ctx.stroke();
+            if(hoverPoint){const {x}=hoverPoint,y=getY(x);ctx.fillStyle='#ff5050';ctx.beginPath();ctx.arc(mapX(x),mapY(y,maxY),5,0,Math.PI*2);ctx.fill();}
+        }
+        
+        canvas.addEventListener('mousemove',e=>{
+            const r=canvas.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;
+            if(mx>=pad&&mx<=w-pad&&my>=pad&&my<=h-pad){
+                const x=xMin+(mx-pad)/(w-2*pad)*(xMax-xMin),y=getY(x);
+                hoverPoint={x,y};
+                tooltip.style.display='block';
+                tooltip.style.left=mx+12+'px';
+                tooltip.style.top=my-24+'px';
+                tooltip.textContent=`X=${x.toFixed(2)}  Y=${y.toFixed(4)}`;
+            }else{hoverPoint=null;tooltip.style.display='none';}
+            redrawAll();
+        });
+        canvas.addEventListener('mouseleave',()=>{hoverPoint=null;tooltip.style.display='none';redrawAll();});
+        window.addEventListener('load',redrawAll);
+    </script>
+</body>
+</html>

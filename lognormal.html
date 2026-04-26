@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>对数正态分布交互可视化</title>
+    <link rel="stylesheet" href="common.css">
+    <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+</head>
+<body>
+    <h1 class="title">对数正态分布（Log-Normal）</h1>
+
+    <div class="toggle-panel">
+        <span class="toggle-label">显示类型：</span>
+        <div class="radio-group">
+            <label class="radio-item"><input type="radio" name="funcType" value="pdf" checked onchange="redrawAll()"> 概率密度函数 (PDF)</label>
+            <label class="radio-item"><input type="radio" name="funcType" value="cdf" onchange="redrawAll()"> 分布函数 (CDF)</label>
+        </div>
+    </div>
+
+    <div class="control-panel">
+        <div class="control-left">
+            <div class="control-group">
+                <span class="control-label">对数均值 (μ)：</span>
+                <button class="param-btn" onclick="changeMu(-0.5)">- 0.5</button>
+                <span id="muValue" class="param-display">0.0</span>
+                <button class="param-btn" onclick="changeMu(0.5)">+ 0.5</button>
+            </div>
+            <div class="control-group">
+                <span class="control-label">对数标准差 (σ)：</span>
+                <button class="param-btn" onclick="changeSigma(-0.1)">- 0.1</button>
+                <span id="sigmaValue" class="param-display">0.5</span>
+                <button class="param-btn" onclick="changeSigma(0.1)">+ 0.1</button>
+            </div>
+        </div>
+        <div class="control-right">
+            <div class="formula-title">当前分布公式</div>
+            <div class="formula-box" id="formulaDisplay"></div>
+        </div>
+    </div>
+
+    <div class="canvas-container"><div id="tooltip"></div><canvas id="distributionCanvas" width="800" height="400"></canvas></div>
+
+    <div class="relation-panel">
+        <h3 class="relation-title">📊 对数正态分布与常见统计分布的关系</h3>
+        <p class="relation-desc">1. X 服从对数正态分布 ⇔ ln(X) 服从正态分布<br>2. 常用于金融、收入、寿命、尺寸等正偏数据<br>3. 多个独立正变量乘积 → 对数正态分布<br>4. 与正态分布、伽马分布密切相关</p>
+        <div class="link-group">
+            <a href="normal.html">正态</a><a href="chi.html">卡方</a><a href="t.html">t分布</a><a href="f.html">F</a><a href="gamma.html">伽马</a><a href="exponential.html">指数</a>
+        </div>
+    </div>
+
+    <script>
+        const canvas=document.getElementById('distributionCanvas'),ctx=canvas.getContext('2d'),tooltip=document.getElementById('tooltip'),formulaDisplay=document.getElementById('formulaDisplay');
+        let mu=0.0,sigma=0.5,hoverPoint=null; const w=800,h=400,pad=50,xMin=0,xMax=10;
+        function getType(){return document.querySelector('input[name="funcType"]:checked').value;}
+        function normCDF(z){const t=1/(1+0.2316419*Math.abs(z)),d=0.3989423*Math.exp(-z*z/2),p=d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));return Math.max(0,Math.min(1,z>0?1-p:p));}
+        function logNormalPDF(x){if(x<=0)return 0;const ln=Math.log(x);const exponent=-((ln-mu)**2)/(2*sigma**2);return (1/(x*sigma*Math.sqrt(2*Math.PI)))*Math.exp(exponent);}
+        function logNormalCDF(x){if(x<=0)return 0;const z=(Math.log(x)-mu)/sigma;return normCDF(z);}
+        function getY(x){return getType()==='pdf'?logNormalPDF(x):logNormalCDF(x);}
+        function updateFormula(){const m=mu.toFixed(1),s=sigma.toFixed(1);if(getType()==='pdf')formulaDisplay.innerHTML=`\\( f(x) = \\dfrac{1}{x${s}\\sqrt{2\\pi}} e^{-\\dfrac{(\\ln x-${m})^2}{2${s}^2}} \\)`;else formulaDisplay.innerHTML=`\\( F(x) = \\Phi\\left(\\dfrac{\\ln x-${m}}{${s}}\\right) \\)`;if(window.MathJax)MathJax.typesetPromise([formulaDisplay]);}
+        function changeMu(d){mu+=d;document.getElementById('muValue').textContent=mu.toFixed(1);redrawAll();}
+        function changeSigma(d){const ns=sigma+d;if(ns>0.1){sigma=ns;document.getElementById('sigmaValue').textContent=sigma.toFixed(1);redrawAll();}}
+        function mapX(x){return pad+(x-xMin)/(xMax-xMin)*(w-2*pad);}
+        function mapY(y,maxY){const val=h-pad-(y/maxY)*(h-2*pad);return Math.max(pad,Math.min(h-pad,val));}
+        function drawAxes(){ctx.clearRect(0,0,w,h);ctx.strokeStyle='#cbd5e0';ctx.lineWidth=1;for(let y=pad;y<=h-pad;y+=40){ctx.beginPath();ctx.moveTo(pad,y);ctx.lineTo(w-pad,y);ctx.stroke();}for(let x=pad;x<=w-pad;x+=40){ctx.beginPath();ctx.moveTo(x,pad);ctx.lineTo(x,h-pad);ctx.stroke();}ctx.strokeStyle='#2d3748';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(pad,h-pad);ctx.lineTo(w-pad,h-pad);ctx.stroke();ctx.beginPath();ctx.moveTo(pad,pad);ctx.lineTo(pad,h-pad);ctx.stroke();ctx.fillStyle='#333';ctx.font='12px Arial';ctx.textAlign='center';for(let x=0;x<=10;x+=1)ctx.fillText(x,mapX(x),h-pad+15);ctx.textAlign='right';for(let i=0;i<=1;i+=0.2)ctx.fillText(i.toFixed(1),pad-8,mapY(i,1)+4);}
+        function redrawAll(){updateFormula();drawAxes();const isPdf=getType()==='pdf';const mode=Math.exp(mu-sigma*sigma);const maxY=isPdf?logNormalPDF(mode)*1.1:1.0;ctx.strokeStyle='#4299e1';ctx.lineWidth=3;ctx.beginPath();for(let px=0;px<w;px++){const x=xMin+px/w*(xMax-xMin),y=getY(x),cx=mapX(x),cy=mapY(y,maxY);px===0?ctx.moveTo(cx,cy):ctx.lineTo(cx,cy);}ctx.stroke();if(hoverPoint){const {x}=hoverPoint,y=getY(x);ctx.fillStyle='#ff5050';ctx.beginPath();ctx.arc(mapX(x),mapY(y,maxY),5,0,Math.PI*2);ctx.fill();}}
+        canvas.addEventListener('mousemove',e=>{const r=canvas.getBoundingClientRect(),mx=e.clientX-r.left,my=e.clientY-r.top;if(mx>=pad&&mx<=w-pad&&my>=pad&&my<=h-pad){const x=xMin+(mx-pad)/(w-2*pad)*(xMax-xMin),y=getY(x);hoverPoint={x,y};tooltip.style.display='block';tooltip.style.left=mx+12+'px';tooltip.style.top=my-24+'px';tooltip.textContent=`X=${x.toFixed(2)}  Y=${y.toFixed(4)}`;}else{hoverPoint=null;tooltip.style.display='none';}redrawAll();});
+        canvas.addEventListener('mouseleave',()=>{hoverPoint=null;tooltip.style.display='none';redrawAll();});
+        window.addEventListener('load',redrawAll);
+    </script>
+</body>
+</html>
